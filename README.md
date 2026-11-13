@@ -1,64 +1,93 @@
-# Qoder Sites React starter
+# ReDoc · 让笔记回到来源
 
-A React, TypeScript, Vite and Tailwind frontend with a bundled Shadcn component catalog. Vite produces static files in `dist/`. Server behavior belongs in the optional Qoder Sites Function, not a Node or framework server.
+ReDoc 是一个本地优先的课程资料与可追溯笔记工作台。它把课程资料导入、统一预览、区域/文本摘录、结构化识别、笔记整理和导出放在同一个工作流中，并为摘录保留可回跳的来源锚点。
 
-## Develop
+## 已实现功能
 
-Use a Node version accepted by `package.json` (`^22.13.0 || >=24.0.0`). Select an installed compatible runtime and keep it selected for installation, development and build:
+- 课程创建、编辑、归档；课程内资料上传、重命名、文件夹分类、下载与软删除。
+- PDF、图片、Markdown、文本、CSV、音视频预览；Office 与不支持格式保留原件并提供明确的下载降级。
+- PDF 文字层选择、页码/缩放/搜索、区域框选截图；图片区域摘录与视频帧截图。
+- 来源锚点保存资料 ID、版本、页码、归一化坐标、文本快照或视频时间；Note 中的引用可回跳。
+- 结构化 Note 块编辑、标题、列表、引用、代码、KaTeX 公式、表格、图片、拖拽排序、撤销/重做、标签与课程内搜索。
+- 800 ms 防抖自动保存、当前标签页草稿日志、刷新恢复和版本冲突保护。
+- 数字 PDF 文字层提取与图片/扫描 PDF 的本地 Tesseract OCR；结构化重建稿对照修订、只读 Markdown 预览和独立版本保留。
+- 任务进度、失败原因与重试；重建失败或重跑不会覆盖已有校对稿。
+- Markdown 导出；含图片时导出 ZIP 与 `assets/`；DOCX 导出保留标题、表格、公式文本与可嵌入图片，可选择是否显示来源。
+- 可选 DeepSeek 笔记整理：默认关闭，发送前明确确认，生成结果预览后才作为新章节插入，不覆盖原笔记。
+- 笔记与来源元数据 JSON 备份；原始资料可分别下载。
 
-```sh
+## 本地运行
+
+要求 Node.js `^22.13.0 || >=24.0.0`。
+
+```bash
 npm ci
 npm run dev
 ```
 
-Use the loopback URL printed by Vite. Edit `src/App.tsx`, `src/globals.css` and the title/description in `index.html`. Replace the sample page with the requested product before presenting a first meaningful preview. Import existing UI primitives from `@/components/ui/<component>` and compose them for the site's design. The neutral starter theme is a starting point, not the finished visual direction.
+使用 Vite 输出的 loopback 地址。首次打开会载入一套可删除的高等数学演示课程；之后上传、编辑和重建的数据均保存在当前浏览器的 IndexedDB 中。
 
-For production output:
-
-```sh
-npm run build
-npm run preview
+```bash
+npm test          # Node 原生测试：来源、Function、Markdown/ZIP、DOCX 等
+npm run build     # TypeScript 检查与生产构建
+npm run preview   # 本地预览 dist/
+npm audit --audit-level=high
 ```
 
-The build fixes `NODE_ENV=production` before loading Vite, independently of the terminal environment. It checks the frontend and bundled component types and emits `dist/index.html` and assets. `npm run preview` serves this output locally. Reuse passing checks while source is unchanged; no additional unit-test suite or browser QA is required by the template.
+PDF.js worker、CMap 与标准字体由构建准备脚本复制到本地静态目录，不依赖第三方 CDN。
 
-## Optional Function
+## 可选 AI 整理
 
-The default page is entirely static and does not call a Function. For server behavior, adapt the public, credential-free example in `functions/handler.ts`. `functions/index.ts` is the Deno deployment entry point. Check `deno --version` before using a separate terminal for:
+前端不会读取或打包 API 密钥。本地 Function 检查可在项目根目录创建不提交的 `.env`：
 
-```sh
-npm run check:function
+```dotenv
+DEEPSEEK_API=你的服务端密钥
+```
+
+也兼容已有变量名 `DEEPSEEK_api`。不要将真实值写入源码、README、聊天或 Git。
+
+```bash
+node --env-file=.env scripts/check-ai.mjs
 npm run dev:function
 ```
 
-If Deno is unavailable, the static frontend can still build and run. Keep Function validation pending until Deno or an equivalent existing Function checker is available; `npm run build` checks the frontend only. Local proxy requests also need a running compatible Function server.
+`dev:function` 与 `check:function` 需要本机 Deno。没有 Deno 时，前端、IndexedDB、OCR 和不依赖云端的导出仍可运行；`npm test` 使用 Node 24 的 TypeScript 支持验证 Function 业务逻辑，但不等同于 Deno 兼容性检查。
 
-The local service binds to `127.0.0.1:8000`; Vite development and built preview proxy `/functions/v1/app` to it, preserving the path. Probe with an available HTTP tool or Node `fetch`; with `curl` installed, for example:
+AI 请求只发送当前 Note 的标题、整理用 Markdown 和来源标签，不发送原始 PDF、图片或音视频。云端功能不可用时，资料预览、手动摘录、编辑与导出不受影响。
 
-```sh
-curl --fail 'http://127.0.0.1:5173/functions/v1/app?name=Visitor'
+## Qoder Sites 发布
+
+```bash
+npm run build
 ```
 
-Use Vite's actual port if it differs. The same frontend request after deployment is routed by Qoder Sites. Local proxy configuration is not production routing. Keep local-only servers and fixtures in `dev/`, outside both publication directories. The included Function has no dependencies; add self-contained runtime imports as required. Frontend npm dependencies are not automatically installed in Functions.
+在 Qoder Sites 中使用以下发布配置：
 
-## Publish with Qoder Sites
+- 静态目录：`dist/`
+- SPA 回退：开启
+- Function 目录：`functions/`
+- Function 入口：`functions/index.ts`
+- 服务端 Secret：`DEEPSEEK_API`
 
-Open a local conversation in this project and follow the `sites-hosting` skill. Workspace registration is optional. Use the directory returned by `get_context` with:
+Secret 值只能通过 Sites Settings 的安全输入配置。线上地址、作品帖和验收记录见 `DESIGN.md`。
 
-- `webDirectory: "dist"` after the build.
-- `spa: false` for the default single page; use `true` when adding client-side deep routes that need fallback.
-- `functionDirectory: "functions"` only if the application uses the Function. Omit it for static-only delivery.
+## 数据与隐私
 
-The Sites tools prepare artifacts and generate the publication descriptor; publish completed hosted work by default, unless the user explicitly requests a preview first or defers publication. Do not upload the project root, `node_modules`, `dev`, or source as the web artifact. A successful build or release does not prove an external integration works.
+- 原件 Blob、Note、SourceAnchor、重建文档、任务与偏好分别存储；编辑衍生内容不会覆盖原件。
+- 资料删除采用软删除，Note 同时保留摘录时的来源与内容快照。
+- OCR 在当前设备执行；首次使用语言模型时可能需要下载语言数据。
+- AI 默认关闭，需先开启偏好并在每次发送前确认；模型结果不会自动覆盖原笔记。
+- 数据默认只属于当前浏览器配置文件。清除站点数据会删除本地资料；跨设备同步和多人协作尚未实现，请定期导出与下载备份。
 
-For a new database-backed React page, follow the installed `sites-building` Skill's `references/function-backend.md`. Its assembled `assets/function-backend/` example includes `Notes.tsx`, Function routes and a schema using the platform's private database credentials. For a runnable records-and-attachments workbench, use that Skill's `references/records-example.md`; its setup command assembles a new project from this starter and keeps local fixtures outside deployment outputs. Preserve and adapt its application identity and ownership checks before exposing private records. `references/database.md`, `assets/database-react/App.tsx` and `assets/database-function/` are for existing legacy allocations only. These optional assets stay in the Skill rather than being copied into every static project.
+## 当前边界
 
-For database or Storage, follow the corresponding `sites-building` references and `sites-management` capability workflow. For AI, follow `sites-build-agent-app` and keep Cloud Agents access in the Function. Application credentials belong in server-side Sites Settings; frontend environment variables are public. This starter does not implement visitor login, database permissions, Cloud resource coordination or QCA sessions; add those only for the requested feature using the existing skills.
+- OCR 适合清晰中英文文本与基础结构提取；复杂版面、表格、插图和手写内容仍需人工校对，公式上标等可能误识别，不宣称完整 LaTeX OCR。
+- PDF 文本引用以页码、区域和快照定位；并非所有文本选择都能实现字符级精确回跳。
+- Office 当前采用原件保留与下载降级，未实现服务端 DOCX/PPTX/XLSX 转换预览。
+- 视频转写、字幕同步、跨设备同步、完整全文索引和多人权限不在当前版本内。
+- Function 的客户端配额是进程内 best-effort 限制，不是身份认证或全局持久化额度。
+- 自动保存、导出与核心流程已做真实浏览器回归；当前环境未完成桌面截图视觉验收。
 
-See `PROVENANCE.md` and `vendor/` for source attribution and the preserved stylesheet license.
+## 技术栈
 
-After copying the starter, rename `gitignore.template` to `.gitignore` before installing dependencies. This keeps the file available in npm and bundled CLI resources.
-
-## Design workbench
-
-On Desktop, call `open_design_workbench` with the project name and design registration (pages and implemented Nudge capabilities). The tool creates the single `.站点名称.qoder.site` entry; update it through `update_design_workbench`. The starter deliberately contains no fixed-name project entry. Components consume `--site-*` variables defined in the existing application stylesheet. The workbench only previews temporary overrides and attaches requested changes to chat. The Agent implements changes and prepares publication artifacts before reporting completion; no dedicated theme file is required.
+React 19 · TypeScript · Vite · Tailwind CSS · Radix UI · IndexedDB/idb · PDF.js · Tesseract.js · KaTeX · JSZip · docx · Qoder Sites Edge Function · DeepSeek
