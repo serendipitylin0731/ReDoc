@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AudioLines, Camera, ChevronRight, Crop, Download, Expand, File, FileArchive, FileImage, FileText, LoaderCircle, Play, ScanText, Table2, Video } from "lucide-react";
+import { AudioLines, Camera, ChevronRight, Crop, Download, Expand, File, FileArchive, FileImage, FileText, Play, ScanText, Table2, Video } from "lucide-react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { useNavigate } from "react-router-dom";
@@ -10,7 +10,7 @@ import { ocrImage } from "@app/lib/reconstruct";
 import { useWorkspace } from "@app/state/WorkspaceContext";
 import type { Asset, SourceAnchor } from "@app/types";
 
-interface ViewerProps { asset: Asset; noteId: string; onNoteChange: (id: string) => void; focusAnchor?: SourceAnchor | null }
+interface ViewerProps { asset: Asset; noteId: string; onNoteChange: (id: string) => void; focusAnchor?: SourceAnchor | null; showConvert?: boolean }
 type BBox = [number, number, number, number];
 interface Region { x: number; y: number; width: number; height: number }
 
@@ -137,20 +137,13 @@ function UnsupportedViewer({ asset }: { asset: Asset }) {
 }
 
 export default function AssetViewer(props: ViewerProps) {
-  const { asset } = props;
-  const { startReconstruction } = useWorkspace();
+  const { asset, showConvert = true } = props;
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [starting, setStarting] = useState(false);
   const canReconstruct = ["pdf", "image", "markdown", "text"].includes(asset.kind);
-  const reconstruct = async () => {
-    setStarting(true);
-    try { const job = await startReconstruction(asset); navigate(`/courses/${asset.courseId}/reconstruct/${job.documentId}`); }
-    finally { setStarting(false); }
-  };
   const KindIcon = asset.kind === "pdf" || asset.kind === "markdown" || asset.kind === "text" ? FileText : asset.kind === "image" ? FileImage : asset.kind === "video" ? Video : asset.kind === "audio" ? AudioLines : asset.kind === "csv" ? Table2 : FileArchive;
   return <div className="asset-viewer" ref={containerRef}>
-    <div className="asset-viewer-header"><div className="asset-heading"><span className="asset-kind-icon"><KindIcon size={18} /></span><div><strong>{asset.name}</strong><span>{asset.demo ? "独立演示资料" : "我的原始资料"} · v{asset.version} · {(asset.size / 1024).toFixed(1)} KB</span></div></div><div className="asset-header-actions">{canReconstruct && <button className="toolbar-button reconstruct-button" onClick={() => void reconstruct()} disabled={starting}>{starting ? <LoaderCircle size={15} className="spin" /> : <ScanText size={15} />}<span>结构化重建</span><ChevronRight size={13} /></button>}<button className="icon-button" onClick={() => downloadOriginal(asset)} title="下载原件" aria-label="下载原件"><Download size={16} /></button><button className="icon-button" onClick={() => void containerRef.current?.requestFullscreen()} title="全屏查看" aria-label="全屏查看"><Expand size={16} /></button></div></div>
+    <div className="asset-viewer-header"><div className="asset-heading"><span className="asset-kind-icon"><KindIcon size={18} /></span><div><strong>{asset.name}</strong><span>{asset.demo ? "独立演示资料" : "我的原始资料"} · v{asset.version} · {(asset.size / 1024).toFixed(1)} KB</span></div></div><div className="asset-header-actions">{showConvert && canReconstruct && <button className="toolbar-button reconstruct-button" onClick={() => navigate(`/courses/${asset.courseId}/convert?file=${asset.id}`)}><ScanText size={15} /><span>转文字文档</span><ChevronRight size={13} /></button>}<button className="icon-button" onClick={() => downloadOriginal(asset)} title="下载原件" aria-label="下载原件"><Download size={16} /></button><button className="icon-button" onClick={() => void containerRef.current?.requestFullscreen()} title="全屏查看" aria-label="全屏查看"><Expand size={16} /></button></div></div>
     <div className="asset-viewer-content">{asset.kind === "pdf" ? <PdfViewer {...props} /> : asset.kind === "image" ? <ImageViewer {...props} /> : ["markdown", "text", "csv"].includes(asset.kind) ? <TextViewer {...props} /> : asset.kind === "video" ? <VideoViewer {...props} /> : asset.kind === "audio" ? <AudioViewer asset={asset} /> : <UnsupportedViewer asset={asset} />}</div>
   </div>;
 }

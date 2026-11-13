@@ -20,7 +20,8 @@ function AppRoutes() {
     <Route path="/courses/:courseId" element={<CourseHomePage />} />
     <Route path="/courses/:courseId/workspace" element={<WorkspacePage />} />
     <Route path="/courses/:courseId/notes" element={<NotesPage />} />
-    <Route path="/courses/:courseId/reconstruct/:documentId" element={<ReconstructPage />} />
+    <Route path="/courses/:courseId/convert" element={<ReconstructPage />} />
+    <Route path="/courses/:courseId/convert/:documentId" element={<ReconstructPage />} />
     <Route path="/jobs" element={<JobsPage />} />
     <Route path="/settings" element={<SettingsPage />} />
     <Route path="*" element={<Navigate to="/courses" replace />} />

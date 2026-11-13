@@ -1,65 +1,91 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ArrowDown, ArrowLeft, ArrowUp, Check, CheckCircle2, Code2, Eye, FileText, Link2, LoaderCircle, Save, ScanText } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { AlertCircle, ArrowLeft, Download, FileText, LoaderCircle, RefreshCw, ScanText } from "lucide-react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import katex from "katex";
 import { toast } from "sonner";
 import AssetViewer from "@app/components/AssetViewer";
-import ExportMenu from "@app/components/ExportMenu";
-import { blocksToMarkdown } from "@app/lib/export";
+import { exportDocx, exportMarkdown } from "@app/lib/export";
 import { useWorkspace } from "@app/state/WorkspaceContext";
-import type { NoteBlock, ReconstructionDocument, SourceAnchor } from "@app/types";
+import type { NoteBlock } from "@app/types";
+
+function DocumentPreview({ blocks }: { blocks: NoteBlock[] }) {
+  const content: ReactNode[] = [];
+  let numbered = 0;
+  for (const block of blocks) {
+    if (block.type !== "numbered") numbered = 0;
+    if (block.type === "heading1") content.push(<h1 key={block.id}>{block.text}</h1>);
+    else if (block.type === "heading2") content.push(<h2 key={block.id}>{block.text}</h2>);
+    else if (block.type === "heading3") content.push(<h3 key={block.id}>{block.text}</h3>);
+    else if (block.type === "paragraph" || block.type === "excerpt") content.push(<p key={block.id}>{block.text}</p>);
+    else if (block.type === "quote") content.push(<blockquote key={block.id}>{block.text}</blockquote>);
+    else if (block.type === "bullet") content.push(<div className="conversion-list-item" key={block.id}><span>•</span><p>{block.text}</p></div>);
+    else if (block.type === "numbered") { numbered += 1; content.push(<div className="conversion-list-item" key={block.id}><span>{numbered}.</span><p>{block.text}</p></div>); }
+    else if (block.type === "code") content.push(<pre key={block.id}>{block.text}</pre>);
+    else if (block.type === "math") content.push(<div className="conversion-math" key={block.id} dangerouslySetInnerHTML={{ __html: katex.renderToString(block.text, { displayMode: true, throwOnError: false }) }} />);
+    else if (block.type === "table" && block.rows) content.push(<div className="conversion-table-wrap" key={block.id}><table><tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => rowIndex === 0 ? <th key={cellIndex}>{cell}</th> : <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table></div>);
+    else if (block.type === "image" && block.src) content.push(<figure key={block.id}><img src={block.src} alt={block.text || "原始页面"} /><figcaption>{block.text}</figcaption></figure>);
+  }
+  return <article className="conversion-document-preview">{content}</article>;
+}
 
 export default function ReconstructPage() {
-  const { courseId = "", documentId = "" } = useParams();
-  const { documents, assets, notes, jobs, anchors, saveDocument, resolveAnchor } = useWorkspace();
-  const stored = documents.find((document) => document.id === documentId);
-  const asset = assets.find((item) => item.id === stored?.assetId);
-  const job = jobs.find((item) => item.documentId === stored?.id) ?? jobs.filter((item) => item.assetId === stored?.assetId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-  const [draft, setDraft] = useState<ReconstructionDocument | null>(stored ?? null);
-  const [dirty, setDirty] = useState(false);
-  const [activeBlock, setActiveBlock] = useState("");
-  const [focusAnchor, setFocusAnchor] = useState<SourceAnchor | null>(null);
-  const [sourceMode, setSourceMode] = useState(false);
-  const [sourceText, setSourceText] = useState("");
-  const editRevision = useRef(0);
+  const { courseId = "", documentId } = useParams();
+  const { documents, assets, jobs, startReconstruction } = useWorkspace();
+  const [searchParams] = useSearchParams();
+  const [format, setFormat] = useState<"markdown" | "docx">("docx");
+  const [downloadAfter, setDownloadAfter] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const navigate = useNavigate();
-  useEffect(() => { if (stored && !dirty) setDraft(stored); }, [stored, dirty]);
-  useEffect(() => {
-    if (!dirty || !draft) return;
-    const revision = editRevision.current;
-    const timer = setTimeout(() => {
-      void saveDocument(draft).then(() => {
-        if (editRevision.current === revision) setDirty(false);
-      }).catch(() => toast.error("校对稿保存失败，请检查浏览器存储空间。"));
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [draft, dirty, saveDocument]);
+  const courseAssets = assets.filter((asset) => asset.courseId === courseId && ["pdf", "image", "markdown", "text"].includes(asset.kind));
+  const requestedDocument = documents.find((document) => document.id === documentId);
+  const asset = assets.find((item) => item.id === requestedDocument?.assetId) ?? courseAssets.find((item) => item.id === searchParams.get("file")) ?? courseAssets[0];
+  const currentDocument = requestedDocument ?? documents.filter((document) => document.assetId === asset?.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const job = jobs.find((item) => item.documentId === currentDocument?.id) ?? jobs.filter((item) => item.assetId === asset?.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   const exportNote = useMemo(() => ({
-    id: draft?.id ?? "reconstruction", courseId, folderId: null, title: `${asset?.name.replace(/\.[^.]+$/, "") ?? "重建文档"} · 校对稿`, blocks: draft?.blocks ?? [], tags: ["结构化重建"], favorite: false, version: 1, createdAt: draft?.updatedAt ?? new Date().toISOString(), updatedAt: draft?.updatedAt ?? new Date().toISOString(),
-  }), [draft, asset, courseId]);
-  if (!stored || !asset) return <div className="large-empty-state"><ScanText size={30} /><h3>重建文档不可用</h3><p>原始资料可能已被移出，既有 Note 不受影响。</p><button className="primary-button" onClick={() => navigate(`/courses/${courseId}/workspace`)}>返回工作台</button></div>;
-  const currentDraft = draft ?? stored;
-  const update = (blocks: NoteBlock[]) => { editRevision.current += 1; setDraft({ ...currentDraft, blocks }); setDirty(true); };
-  const patchBlock = (id: string, patch: Partial<NoteBlock>) => update(currentDraft.blocks.map((block) => block.id === id ? { ...block, ...patch } : block));
-  const locate = async (block: NoteBlock) => {
-    setActiveBlock(block.id);
-    if (!block.sourceAnchorId) return;
-    const resolved = await resolveAnchor(block.sourceAnchorId);
-    if (resolved?.anchor) setFocusAnchor(resolved.anchor);
+    id: currentDocument?.id ?? "conversion", courseId, folderId: null, title: `${asset?.name.replace(/\.[^.]+$/, "") ?? "转换文档"} · 文字版`, blocks: currentDocument?.blocks ?? [], tags: [], favorite: false, version: 1, createdAt: currentDocument?.updatedAt ?? new Date().toISOString(), updatedAt: currentDocument?.updatedAt ?? new Date().toISOString(),
+  }), [currentDocument, asset, courseId]);
+
+  const download = useCallback(async () => {
+    if (currentDocument?.status !== "ready") return;
+    setDownloading(true);
+    try {
+      if (format === "markdown") await exportMarkdown(exportNote, [], false);
+      else await exportDocx(exportNote, false);
+      toast.success(format === "markdown" && exportNote.blocks.some((block) => block.src) ? "Markdown 与图片已打包下载" : "文档已下载到本地");
+    } catch {
+      toast.error("下载失败，请重试。");
+    } finally {
+      setDownloading(false);
+    }
+  }, [currentDocument?.status, exportNote, format]);
+
+  useEffect(() => {
+    if (downloadAfter && currentDocument?.status === "ready") {
+      setDownloadAfter(false);
+      void download();
+    }
+    if (downloadAfter && currentDocument?.status === "failed") setDownloadAfter(false);
+  }, [currentDocument?.status, download, downloadAfter]);
+
+  const convert = async (withDownload: boolean) => {
+    if (!asset) return;
+    setDownloadAfter(withDownload);
+    try {
+      const created = await startReconstruction(asset);
+      navigate(`/courses/${courseId}/convert/${created.documentId}?file=${asset.id}`);
+    } catch {
+      setDownloadAfter(false);
+      toast.error("无法启动转换，请重试。");
+    }
   };
-  const move = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (target < 0 || target >= currentDraft.blocks.length) return;
-    const blocks = [...currentDraft.blocks]; [blocks[index], blocks[target]] = [blocks[target], blocks[index]]; update(blocks);
+  const selectAsset = (id: string) => {
+    setDownloadAfter(false);
+    navigate(`/courses/${courseId}/convert?file=${id}`);
   };
-  const switchMode = () => {
-    if (!sourceMode) setSourceText(blocksToMarkdown(exportNote, anchors, false));
-    setSourceMode((value) => !value);
-  };
-  const save = async () => {
-    const revision = editRevision.current;
-    await saveDocument(currentDraft);
-    if (editRevision.current === revision) setDirty(false);
-    toast.success("校对稿已保存，原始资料未修改");
-  };
-  return <div className="reconstruct-page"><header className="reconstruct-header"><div><button className="back-link" onClick={() => navigate(`/courses/${courseId}/workspace?file=${asset.id}`)}><ArrowLeft size={15} />返回工作台</button><span className="eyebrow">SOURCE-ALIGNED RECONSTRUCTION</span><h1>原文 / 重建稿对照</h1></div><div className="reconstruct-header-actions"><span className={`revision-status ${dirty ? "dirty" : ""}`}>{dirty ? <LoaderCircle size={14} className="spin" /> : <Check size={14} />}{dirty ? "正在自动保存修订" : "修订稿已保存"}</span><button className="toolbar-button" onClick={switchMode}>{sourceMode ? <Eye size={15} /> : <Code2 size={15} />}{sourceMode ? "可视化编辑" : "Markdown 预览"}</button><button className="toolbar-button" onClick={() => void save()}><Save size={15} />保存</button><ExportMenu note={exportNote} compact /></div></header>{currentDraft.status === "processing" && <div className="reconstruct-progress"><LoaderCircle size={19} className="spin" /><div><strong>正在识别原始资料…</strong><span>数字文本直接提取，扫描页在本地 OCR。你可以离开此页，在任务中心查看进度。</span></div><span>{job?.progress ?? 0}%</span><i style={{ width: `${job?.progress ?? 0}%` }} /></div>}{currentDraft.status === "failed" && <div className="reconstruct-failed"><AlertCircle size={18} /><span>{job?.errorMessage ?? "识别未完成，请前往任务中心重试。"}</span><button onClick={() => navigate("/jobs")}>查看任务</button></div>}<div className="reconstruct-columns"><section className="reconstruct-original"><div className="reconstruct-column-heading"><span><ScanText size={16} />原始资料</span><small>点击右侧内容块定位来源区域</small></div><AssetViewer asset={asset} noteId={notes.find((note) => note.courseId === courseId)?.id ?? ""} onNoteChange={() => undefined} focusAnchor={focusAnchor} /></section><section className="reconstruct-editor"><div className="reconstruct-column-heading"><span><FileText size={16} />结构化校对稿 <i>{currentDraft.blocks.length} 块</i></span><small>低置信度内容需人工确认</small></div>{sourceMode ? <div className="reconstruction-source-panel"><p>只读预览 · JSON 校对稿与来源锚点保持为唯一权威状态，请使用可视化编辑修订。</p><textarea className="reconstruction-source" aria-label="Markdown 只读预览" value={sourceText} readOnly spellCheck={false} /></div> : <div className="reconstruction-blocks">{currentDraft.blocks.map((block, index) => <article className={`reconstruction-block ${activeBlock === block.id ? "active" : ""} ${block.reviewStatus === "needs_review" ? "needs-review" : ""}`} key={block.id} onClick={() => void locate(block)}><div className="reconstruction-block-tools"><select aria-label="块类型" value={block.type} onChange={(event) => patchBlock(block.id, { type: event.target.value as NoteBlock["type"] })}><option value="heading2">标题</option><option value="paragraph">正文</option><option value="bullet">列表</option><option value="math">公式</option><option value="quote">引用</option><option value="code">代码</option></select><span>{block.confidence !== undefined ? `${Math.round(block.confidence)}% 置信度` : "数字文本"}</span><button title="上移" disabled={index === 0} onClick={(event) => { event.stopPropagation(); move(index, -1); }}><ArrowUp size={13} /></button><button title="下移" disabled={index === currentDraft.blocks.length - 1} onClick={(event) => { event.stopPropagation(); move(index, 1); }}><ArrowDown size={13} /></button></div><textarea value={block.text} aria-label={`重建块 ${index + 1}`} rows={Math.max(2, Math.ceil(block.text.length / 60))} onFocus={() => void locate(block)} onChange={(event) => patchBlock(block.id, { text: event.target.value, reviewStatus: "unreviewed" })} /><div className="reconstruction-block-footer"><button className="block-source-link" onClick={(event) => { event.stopPropagation(); void locate(block); }}><Link2 size={12} />{block.sourceSnapshot?.label ?? "来源待核对"}</button><button className={`review-button ${block.reviewStatus === "confirmed" ? "confirmed" : ""}`} onClick={(event) => { event.stopPropagation(); patchBlock(block.id, { reviewStatus: block.reviewStatus === "confirmed" ? "unreviewed" : "confirmed" }); }}>{block.reviewStatus === "confirmed" ? <CheckCircle2 size={13} /> : <Check size={13} />}{block.reviewStatus === "confirmed" ? "已确认" : "确认内容"}</button></div></article>)}{!currentDraft.blocks.length && currentDraft.status === "ready" && <div className="large-empty-state"><FileText size={26} /><p>没有生成内容块，请重试或使用手动摘录。</p></div>}</div>}</section></div></div>;
+  const processing = currentDocument?.status === "processing";
+  return <div className="reconstruct-page conversion-page"><header className="reconstruct-header"><div><button className="back-link" onClick={() => navigate(`/courses/${courseId}`)}><ArrowLeft size={15} />返回课程</button><span className="eyebrow">DOCUMENT CONVERTER</span><h1>图片 / PDF 转文字</h1></div><div className="reconstruct-header-actions"><label className="conversion-asset-select"><ScanText size={15} /><select aria-label="选择要转换的资料" value={asset?.id ?? ""} onChange={(event) => selectAsset(event.target.value)}>{courseAssets.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><select className="conversion-format-select" aria-label="下载格式" value={format} onChange={(event) => setFormat(event.target.value as "markdown" | "docx")}><option value="docx">Word (.docx)</option><option value="markdown">Markdown{currentDocument?.blocks.some((block) => block.src) ? " (.zip)" : " (.md)"}</option></select>{currentDocument?.status === "ready" && <button className="toolbar-button" onClick={() => void convert(false)} disabled={processing}><RefreshCw size={15} />重新转换</button>}<button className="primary-button" disabled={!asset || processing || downloading} onClick={() => currentDocument?.status === "ready" ? void download() : void convert(true)}>{processing || downloading ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />}{processing ? "正在转换" : downloading ? "正在生成下载" : currentDocument?.status === "ready" ? `下载 ${format === "docx" ? "Word" : "Markdown"}` : "转换并下载"}</button></div></header>
+    {processing && <div className="reconstruct-progress"><LoaderCircle size={19} className="spin" /><div><strong>正在生成文字文档…</strong><span>文字层直接提取，图片和扫描页进行中英文 OCR，同时保留原始页面。</span></div><span>{job?.progress ?? 0}%</span><i style={{ width: `${job?.progress ?? 0}%` }} /></div>}
+    {currentDocument?.status === "failed" && <div className="reconstruct-failed"><AlertCircle size={18} /><span>{job?.errorMessage ?? "转换未完成，请重试。"}</span><button onClick={() => void convert(false)}>重新转换</button></div>}
+    <div className="reconstruct-columns"><section className="reconstruct-original"><div className="reconstruct-column-heading"><span><ScanText size={16} />原始文件</span><small>{asset?.name ?? "尚未选择文件"}</small></div>{asset ? <AssetViewer asset={asset} noteId="" onNoteChange={() => undefined} showConvert={false} /> : <div className="large-empty-state"><ScanText size={28} /><p>请先在课程中导入 PDF、图片或文本文件。</p></div>}</section><section className="reconstruct-editor"><div className="reconstruct-column-heading"><span><FileText size={16} />文字文档</span><small>{currentDocument?.status === "ready" ? "原页图像与可编辑文字一并保留" : "转换后可下载到本地"}</small></div><div className="conversion-document-scroll">{currentDocument?.status === "ready" ? <DocumentPreview blocks={currentDocument.blocks} /> : documentId && !requestedDocument ? <div className="large-empty-state"><FileText size={28} /><h3>本次转换结果已结束</h3><p>转换文档只保留在当前会话中，请重新转换并下载。</p><button className="primary-button" onClick={() => void convert(true)} disabled={!asset}>重新转换</button></div> : <div className="large-empty-state"><FileText size={28} /><h3>{processing ? "正在生成文档" : "准备转换"}</h3><p>{processing ? "完成后会在这里显示整篇文档。" : "选择资料与格式，点击“转换并下载”。"}</p></div>}</div></section></div>
+  </div>;
 }

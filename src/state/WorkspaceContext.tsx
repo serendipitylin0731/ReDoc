@@ -19,6 +19,7 @@ interface WorkspaceContextValue {
   createFolder: (courseId: string, name: string) => Promise<void>;
   uploadFiles: (courseId: string, files: File[], folderId?: string | null) => Promise<Asset[]>;
   renameAsset: (asset: Asset, name: string) => Promise<void>;
+  moveAssetToFolder: (asset: Asset, folderId: string | null) => Promise<void>;
   deleteAsset: (asset: Asset) => Promise<void>;
   createNote: (courseId: string, title?: string) => Promise<Note>;
   updateNote: (note: Note, immediate?: boolean) => void;
@@ -26,7 +27,6 @@ interface WorkspaceContextValue {
   addExcerpt: (input: ExcerptInput) => Promise<string>;
   resolveAnchor: (anchorId: string) => Promise<{ anchor: SourceAnchor; asset?: Asset } | undefined>;
   startReconstruction: (asset: Asset, retryJob?: Job) => Promise<Job>;
-  saveDocument: (document: ReconstructionDocument) => Promise<void>;
   setPreference: <T>(key: string, value: T) => Promise<void>;
   getPreference: <T>(key: string, fallback: T) => Promise<T>;
   refresh: () => Promise<void>;
@@ -178,6 +178,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setAssets((current) => current.map((item) => item.id === asset.id ? updated : item));
   }, []);
 
+  const moveAssetToFolder = useCallback(async (asset: Asset, folderId: string | null) => {
+    const updated = { ...asset, folderId };
+    await putRecord("assets", updated);
+    setAssets((current) => current.map((item) => item.id === asset.id ? updated : item));
+  }, []);
+
   const deleteAsset = useCallback(async (asset: Asset) => {
     await putRecord("assets", { ...asset, status: "deleted" });
     setAssets((current) => current.filter((item) => item.id !== asset.id));
@@ -290,15 +296,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const startReconstruction = useCallback(async (asset: Asset, retryJob?: Job) => {
     const now = new Date().toISOString();
-    const existingDocuments = await getAll("documents");
-    const extractionVersion = Math.max(0, ...existingDocuments.filter((item) => item.assetId === asset.id).map((item) => item.extractionVersion)) + 1;
-    const document: ReconstructionDocument = { id: `document-${asset.id}-v${extractionVersion}`, assetId: asset.id, courseId: asset.courseId, extractionVersion, status: "processing", blocks: [], updatedAt: now };
+    const extractionVersion = Math.max(0, ...documents.filter((item) => item.assetId === asset.id).map((item) => item.extractionVersion)) + 1;
+    const document: ReconstructionDocument = { id: `document-${asset.id}-${crypto.randomUUID()}`, assetId: asset.id, courseId: asset.courseId, extractionVersion, status: "processing", blocks: [], updatedAt: now };
     const job: Job = retryJob ? { ...retryJob, documentId: document.id, status: "queued", progress: 0, errorMessage: undefined, retryCount: retryJob.retryCount + 1, updatedAt: now } : {
       id: crypto.randomUUID(), assetId: asset.id, courseId: asset.courseId, assetName: asset.name, jobType: "ocr", documentId: document.id, status: "queued", progress: 0, retryCount: 0, createdAt: now, updatedAt: now,
     };
     await putRecord("jobs", job);
     setJobs((current) => retryJob ? current.map((item) => item.id === job.id ? job : item) : [job, ...current]);
-    await putRecord("documents", document);
     setDocuments((current) => [document, ...current]);
     const updateJob = async (patch: Partial<Job>) => {
       Object.assign(job, patch, { updatedAt: new Date().toISOString() });
@@ -309,29 +313,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       try {
         await updateJob({ status: "running", progress: 2 });
         const result = await reconstructAsset(asset, (progress) => { void updateJob({ progress }); });
-        await Promise.all(result.anchors.map((anchor) => putRecord("anchors", anchor)));
         const ready = { ...document, status: "ready" as const, blocks: result.blocks, updatedAt: new Date().toISOString() };
-        await putRecord("documents", ready);
         setDocuments((current) => current.map((item) => item.id === ready.id ? ready : item));
-        setAnchors((current) => [...current, ...result.anchors]);
         await updateJob({ status: "succeeded", progress: 100 });
-        toast.success("结构化重建完成，可以逐段校对");
+        toast.success("文字文档已生成，请下载到本地");
       } catch (error) {
         await updateJob({ status: "failed", errorMessage: error instanceof Error ? error.message : "识别失败，请重试" });
         const failed = { ...document, status: "failed" as const, updatedAt: new Date().toISOString() };
-        await putRecord("documents", failed);
         setDocuments((current) => current.map((item) => item.id === failed.id ? failed : item));
-        toast.error("重建未完成", { description: error instanceof Error ? error.message : "请稍后重试" });
+        toast.error("转换未完成", { description: error instanceof Error ? error.message : "请稍后重试" });
       }
     })();
     return job;
-  }, []);
-
-  const saveDocument = useCallback(async (document: ReconstructionDocument) => {
-    const updated = { ...document, updatedAt: new Date().toISOString() };
-    await putRecord("documents", updated);
-    setDocuments((current) => current.map((item) => item.id === document.id ? updated : item));
-  }, []);
+  }, [documents]);
 
   const setPreference = useCallback(async <T,>(key: string, value: T) => {
     await putRecord("preferences", value, key);
@@ -344,8 +338,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const value: WorkspaceContextValue = {
     loading, courses, folders, assets, notes, anchors, jobs, documents, saveStates,
-    createCourse, updateCourse, createFolder, uploadFiles, renameAsset, deleteAsset, createNote, updateNote, removeNote,
-    addExcerpt, resolveAnchor, startReconstruction, saveDocument, setPreference, getPreference, refresh,
+    createCourse, updateCourse, createFolder, uploadFiles, renameAsset, moveAssetToFolder, deleteAsset, createNote, updateNote, removeNote,
+    addExcerpt, resolveAnchor, startReconstruction, setPreference, getPreference, refresh,
   };
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }
