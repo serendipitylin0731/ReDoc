@@ -17,6 +17,15 @@ function anchorFor(block: NoteBlock, anchors: SourceAnchor[]) {
   return anchors.find((anchor) => anchor.id === block.sourceAnchorId);
 }
 
+function imageMime(dataUrl: string) {
+  return /^data:image\/jpeg[;,]/.test(dataUrl) ? "image/jpeg" : /^data:image\/webp[;,]/.test(dataUrl) ? "image/webp" : "image/png";
+}
+
+function imageExtension(dataUrl: string) {
+  const mime = imageMime(dataUrl);
+  return mime === "image/jpeg" ? "jpg" : mime === "image/webp" ? "webp" : "png";
+}
+
 export function blocksToMarkdown(note: Note, anchors: SourceAnchor[], includeSources = true) {
   const lines = [`# ${note.title}`, ""];
   let numbered = 0;
@@ -41,9 +50,9 @@ export function blocksToMarkdown(note: Note, anchors: SourceAnchor[], includeSou
         lines.push("");
         break;
       }
-      case "image": if (block.src) lines.push(`![${text || "资料截图"}](assets/${block.id}.png)`, ""); break;
+      case "image": if (block.src) lines.push(`![${text || "资料截图"}](assets/${block.id}.${imageExtension(block.src)})`, ""); break;
       case "excerpt": {
-        if (block.src) lines.push(`![${text || "资料区域截图"}](assets/${block.id}.png)`, "");
+        if (block.src) lines.push(`![${text || "资料区域截图"}](assets/${block.id}.${imageExtension(block.src)})`, "");
         if (text) lines.push(`> ${text.split("\n").join("\n> ")}`, "");
         if (includeSources && block.sourceSnapshot) lines.push(`> — 来源：${block.sourceSnapshot.label}`, "");
         break;
@@ -80,7 +89,7 @@ export async function exportMarkdown(note: Note, anchors: SourceAnchor[], includ
   zip.file(`${filename}.md`, blocksToMarkdown(note, anchors, includeSources));
   const assets = zip.folder("assets");
   for (const block of images) {
-    if (block.src && assets) assets.file(`${block.id}.png`, block.src.split(",")[1], { base64: true });
+    if (block.src && assets) assets.file(`${block.id}.${imageExtension(block.src)}`, block.src.split(",")[1], { base64: true });
   }
   saveBlob(await zip.generateAsync({ type: "blob" }), `${filename}-with-assets.zip`);
 }
@@ -110,12 +119,33 @@ function dataUrlBytes(dataUrl: string) {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
+function loadImage(dataUrl: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("image_decode_failed"));
+    image.src = dataUrl;
+  });
+}
+
 async function imageSize(dataUrl: string): Promise<{ width: number; height: number }> {
-  const image = new Image();
-  image.src = dataUrl;
-  await image.decode();
+  const image = await loadImage(dataUrl);
   const width = Math.min(560, image.naturalWidth);
   return { width, height: Math.round(width * image.naturalHeight / image.naturalWidth) };
+}
+
+async function docxImage(dataUrl: string) {
+  if (imageMime(dataUrl) === "image/webp") {
+    const image = await loadImage(dataUrl);
+    const canvas = window.document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("webp_conversion_failed");
+    context.drawImage(image, 0, 0);
+    return { type: "png" as const, data: dataUrlBytes(canvas.toDataURL("image/png")) };
+  }
+  return { type: imageMime(dataUrl) === "image/jpeg" ? "jpg" as const : "png" as const, data: dataUrlBytes(dataUrl) };
 }
 
 export async function exportDocx(note: Note, includeSources: boolean) {
@@ -129,7 +159,7 @@ export async function exportDocx(note: Note, includeSources: boolean) {
       children.push(new Paragraph({ children: richRuns(block.text), indent: block.type === "quote" || block.type === "excerpt" ? { left: 280 } : undefined, spacing: { after: 140 }, border: block.type === "quote" || block.type === "excerpt" ? { left: { color: "6D8B70", size: 10, style: "single", space: 8 } } : undefined }));
     } else if (block.type === "bullet" || block.type === "numbered") {
       listIndex += 1;
-      children.push(new Paragraph({ children: richRuns(block.text), bullet: block.type === "bullet" ? { level: 0 } : undefined, text: block.type === "numbered" ? `${listIndex}. ${plain(block.text)}` : undefined, spacing: { after: 80 } }));
+      children.push(new Paragraph({ children: block.type === "numbered" ? [new TextRun({ text: `${listIndex}. ` }), ...richRuns(block.text)] : richRuns(block.text), bullet: block.type === "bullet" ? { level: 0 } : undefined, spacing: { after: 80 } }));
     } else if (block.type === "math" || block.type === "code") {
       children.push(new Paragraph({ children: [new TextRun({ text: block.type === "math" ? `$$ ${block.text} $$` : block.text, font: "Consolas", size: 21 })], shading: { type: ShadingType.CLEAR, fill: "F2F3ED" }, spacing: { before: 100, after: 160 } }));
     } else if (block.type === "table" && block.rows?.length) {
@@ -137,7 +167,8 @@ export async function exportDocx(note: Note, includeSources: boolean) {
     }
     if (block.src) {
       try {
-        children.push(new Paragraph({ children: [new ImageRun({ type: "png", data: dataUrlBytes(block.src), transformation: await imageSize(block.src) })], spacing: { after: 100 } }));
+        const image = await docxImage(block.src);
+        children.push(new Paragraph({ children: [new ImageRun({ type: image.type, data: image.data, transformation: await imageSize(block.src) })], spacing: { after: 100 } }));
       } catch {
         children.push(new Paragraph({ text: `[图片无法嵌入：${block.id}]` }));
       }

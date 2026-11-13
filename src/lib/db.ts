@@ -119,7 +119,7 @@ export async function seedDemo() {
     id: "demo-calculus",
     title: "高等数学 · 秋季学期",
     description: "多元函数微分学 · 12 周课程资料与复习笔记",
-    color: "#d7e65f",
+    color: "#52715f",
     archived: false,
     createdAt: now,
     updatedAt: now,

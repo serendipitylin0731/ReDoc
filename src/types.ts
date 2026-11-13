@@ -100,6 +100,7 @@ export interface Job {
   courseId: string;
   assetName: string;
   jobType: "ocr" | "extract" | "export";
+  documentId?: string;
   status: JobStatus;
   progress: number;
   errorMessage?: string;

@@ -3,22 +3,47 @@ interface OrganizePayload {
   markdown?: unknown;
 }
 
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function consumeRateLimit(request: Request) {
+  const client = request.headers.get("x-forwarded-for")?.split(",")[0].trim() || request.headers.get("x-real-ip") || "unknown";
+  const now = Date.now();
+  const current = rateBuckets.get(client);
+  if (!current || current.resetAt <= now) {
+    rateBuckets.set(client, { count: 1, resetAt: now + 10 * 60 * 1000 });
+    return true;
+  }
+  if (current.count >= 12) return false;
+  current.count += 1;
+  return true;
+}
+
 function response(body: object, status = 200) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 }
 
 function parseResult(content: string) {
   const cleaned = content.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
-  const parsed = JSON.parse(cleaned) as { title?: unknown; markdown?: unknown };
+  let parsed: { title?: unknown; markdown?: unknown };
+  try { parsed = JSON.parse(cleaned) as { title?: unknown; markdown?: unknown }; }
+  catch { throw new Error("invalid_model_result"); }
   if (typeof parsed.title !== "string" || typeof parsed.markdown !== "string" || !parsed.markdown.trim()) throw new Error("invalid_model_result");
   return { title: parsed.title.slice(0, 120), markdown: parsed.markdown.slice(0, 24000) };
 }
 
 export async function handler(request: Request, apiKey = Deno.env.get("DEEPSEEK_API")): Promise<Response> {
   const path = new URL(request.url).pathname;
-  if (request.method === "GET" && path.endsWith("/health")) return response({ ok: true });
+  if (request.method === "GET" && path.endsWith("/health")) return response({ ok: true, aiConfigured: Boolean(apiKey) });
   if (!path.endsWith("/api/organize")) return response({ ok: false, error: "not_found" }, 404);
   if (request.method !== "POST") return response({ ok: false, error: "method_not_allowed" }, 405);
+  const origin = request.headers.get("Origin");
+  if (origin) {
+    try {
+      if (new URL(origin).host !== new URL(request.url).host) return response({ ok: false, error: "origin_not_allowed" }, 403);
+    } catch {
+      return response({ ok: false, error: "origin_not_allowed" }, 403);
+    }
+  }
   if (!apiKey) return response({ ok: false, error: "service_not_configured" }, 503);
   let payload: OrganizePayload;
   try {
@@ -29,6 +54,7 @@ export async function handler(request: Request, apiKey = Deno.env.get("DEEPSEEK_
   if (typeof payload.title !== "string" || typeof payload.markdown !== "string" || !payload.markdown.trim() || payload.title.length > 160 || payload.markdown.length > 30000) {
     return response({ ok: false, error: "invalid_note" }, 400);
   }
+  if (!consumeRateLimit(request)) return response({ ok: false, error: "rate_limited" }, 429);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);
   try {

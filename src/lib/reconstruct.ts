@@ -1,3 +1,4 @@
+import { getRecord } from "@app/lib/db";
 import type { Asset, NoteBlock, SourceAnchor } from "@app/types";
 
 export interface ReconstructionResult {
@@ -33,9 +34,14 @@ function textBlocks(text: string, asset: Asset, page: number, anchors: SourceAnc
   });
 }
 
-async function recognizeImage(source: Blob | string, onProgress: (progress: number) => void) {
+async function getOcrLanguage() {
+  const language = await getRecord("preferences", "ocr-language");
+  return language === "eng" ? "eng" : "chi_sim+eng";
+}
+
+async function recognizeImage(source: Blob | string, onProgress: (progress: number) => void, language: string) {
   const { recognize } = await import("tesseract.js");
-  const result = await recognize(source, "chi_sim+eng", {
+  const result = await recognize(source, language, {
     logger: (message) => {
       if (message.status === "recognizing text") onProgress(Math.round(message.progress * 100));
     },
@@ -47,7 +53,7 @@ export async function reconstructAsset(asset: Asset, onProgress: (progress: numb
   const anchors: SourceAnchor[] = [];
   if (asset.kind === "image") {
     onProgress(8);
-    const result = await recognizeImage(asset.blob, (progress) => onProgress(Math.max(8, progress)));
+    const result = await recognizeImage(asset.blob, (progress) => onProgress(Math.max(8, progress)), await getOcrLanguage());
     if (!result.text.trim()) throw new Error("未识别到文字，请尝试更清晰的图片或改用手动框选。");
     return { blocks: textBlocks(result.text, asset, 1, anchors, result.confidence), anchors };
   }
@@ -60,7 +66,7 @@ export async function reconstructAsset(asset: Asset, onProgress: (progress: numb
   const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?worker");
   pdfjs.GlobalWorkerOptions.workerPort = new worker.default();
   const data = await asset.blob.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data }).promise;
+  const pdf = await pdfjs.getDocument({ data, cMapUrl: "/pdfjs/cmaps/", cMapPacked: true, standardFontDataUrl: "/pdfjs/standard_fonts/" }).promise;
   const blocks: NoteBlock[] = [];
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
@@ -78,7 +84,7 @@ export async function reconstructAsset(asset: Asset, onProgress: (progress: numb
       await page.render({ canvasContext: context, viewport, canvas }).promise;
       const result = await recognizeImage(canvas.toDataURL("image/png"), (progress) => {
         onProgress(Math.round(((pageNumber - 1 + progress / 100) / pdf.numPages) * 100));
-      });
+      }, await getOcrLanguage());
       blocks.push(...textBlocks(result.text, asset, pageNumber, anchors, result.confidence));
     }
     onProgress(Math.round((pageNumber / pdf.numPages) * 100));
@@ -88,5 +94,5 @@ export async function reconstructAsset(asset: Asset, onProgress: (progress: numb
 }
 
 export async function ocrImage(source: Blob | string, onProgress: (progress: number) => void) {
-  return recognizeImage(source, onProgress);
+  return recognizeImage(source, onProgress, await getOcrLanguage());
 }

@@ -35,6 +35,10 @@ interface WorkspaceContextValue {
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
+function noteDraftKey(tabId: string, noteId: string) {
+  return `redoc-note-draft:${tabId}:${noteId}`;
+}
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -46,6 +50,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [documents, setDocuments] = useState<ReconstructionDocument[]>([]);
   const [saveStates, setSaveStates] = useState<WorkspaceContextValue["saveStates"]>({});
   const notesRef = useRef<Note[]>([]);
+  const tabId = useRef("");
+  if (!tabId.current) {
+    try {
+      tabId.current = sessionStorage.getItem("redoc-tab-id") ?? crypto.randomUUID();
+      sessionStorage.setItem("redoc-tab-id", tabId.current);
+    } catch {
+      tabId.current = crypto.randomUUID();
+    }
+  }
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const saveChains = useRef(new Map<string, Promise<void>>());
 
@@ -58,7 +71,31 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setCourses(courseRows);
     setFolders(folderRows);
     setAssets(assetRows.filter((asset) => asset.status !== "deleted"));
-    setNotes(noteRows);
+    const recoveredNotes = await Promise.all(noteRows.map(async (note) => {
+      const key = noteDraftKey(tabId.current, note.id);
+      let raw: string | null;
+      try { raw = localStorage.getItem(key); }
+      catch { return note; }
+      if (!raw) return note;
+      let draft: Note;
+      try { draft = JSON.parse(raw) as Note; }
+      catch { localStorage.removeItem(key); return note; }
+      if (draft.id !== note.id || !Array.isArray(draft.blocks) || typeof draft.updatedAt !== "string") {
+        localStorage.removeItem(key);
+        return note;
+      }
+      if (draft.updatedAt <= note.updatedAt) { localStorage.removeItem(key); return note; }
+      try {
+        const saved = await saveNote({ ...draft, version: note.version });
+        localStorage.removeItem(key);
+        return saved;
+      } catch {
+        setSaveStates((current) => ({ ...current, [note.id]: "conflict" }));
+        return { ...draft, version: note.version };
+      }
+    }));
+    notesRef.current = recoveredNotes;
+    setNotes(recoveredNotes);
     setAnchors(anchorRows);
     setJobs(jobRows);
     setDocuments(documentRows);
@@ -71,8 +108,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         await seedDemo();
         const db = await getDb();
         const running = await db.getAll("jobs");
-        await Promise.all(running.filter((job) => job.status === "running" || job.status === "queued").map((job) => db.put("jobs", {
+        const interrupted = running.filter((job) => job.status === "running" || job.status === "queued");
+        await Promise.all(interrupted.map((job) => db.put("jobs", {
           ...job, status: "failed" as const, errorMessage: "页面刷新中断了本地任务，请安全重试。", updatedAt: new Date().toISOString(),
+        })));
+        const processingDocuments = await db.getAll("documents");
+        await Promise.all(processingDocuments.filter((document) => document.status === "processing" && interrupted.some((job) => job.assetId === document.assetId)).map((document) => db.put("documents", {
+          ...document, status: "failed" as const, updatedAt: new Date().toISOString(),
         })));
         if (active) await refresh();
       } catch {
@@ -87,7 +129,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const createCourse = useCallback(async (title: string, description: string) => {
     const now = new Date().toISOString();
-    const course: Course = { id: crypto.randomUUID(), title: title.trim(), description: description.trim(), color: ["#d7e65f", "#f1b58c", "#a9d8d0", "#c5b9e8"][courses.length % 4], archived: false, createdAt: now, updatedAt: now };
+    const course: Course = { id: crypto.randomUUID(), title: title.trim(), description: description.trim(), color: ["#52715f", "#a96850", "#46767a", "#76658d"][courses.length % 4], archived: false, createdAt: now, updatedAt: now };
     await putRecord("courses", course);
     setCourses((current) => [...current, course]);
     return course;
@@ -146,7 +188,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const now = new Date().toISOString();
     const note: Note = { id: crypto.randomUUID(), courseId, folderId: null, title, favorite: false, tags: [], version: 0, createdAt: now, updatedAt: now, blocks: [{ id: crypto.randomUUID(), type: "paragraph", text: "" }] };
     const saved = await saveNote(note);
-    setNotes((current) => [saved, ...current]);
+    notesRef.current = [saved, ...notesRef.current];
+    setNotes(notesRef.current);
     return saved;
   }, []);
 
@@ -160,7 +203,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const saved = await saveNote({ ...note, version: latest.version });
         notesRef.current = notesRef.current.map((item) => item.id === note.id ? (item.updatedAt === note.updatedAt ? saved : { ...item, version: saved.version }) : item);
         setNotes(notesRef.current);
-        setSaveStates((current) => ({ ...current, [note.id]: "saved" }));
+        if (notesRef.current.find((item) => item.id === note.id)?.updatedAt === note.updatedAt) {
+          try { localStorage.removeItem(noteDraftKey(tabId.current, note.id)); } catch {}
+          setSaveStates((current) => ({ ...current, [note.id]: "saved" }));
+        }
       } catch (error) {
         if (error instanceof Error && error.message === "version_conflict") {
           setSaveStates((current) => ({ ...current, [note.id]: "conflict" }));
@@ -176,12 +222,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const updateNote = useCallback((note: Note, immediate = false) => {
     const updated = { ...note, updatedAt: new Date().toISOString() };
+    try { localStorage.setItem(noteDraftKey(tabId.current, note.id), JSON.stringify(updated)); } catch {}
     notesRef.current = notesRef.current.map((item) => item.id === note.id ? updated : item);
     setNotes(notesRef.current);
     const existing = timers.current.get(note.id);
     if (existing) clearTimeout(existing);
+    timers.current.delete(note.id);
     if (immediate) enqueueSave(updated);
-    else timers.current.set(note.id, setTimeout(() => enqueueSave(updated), 800));
+    else timers.current.set(note.id, setTimeout(() => { timers.current.delete(note.id); enqueueSave(updated); }, 800));
   }, [enqueueSave]);
 
   useEffect(() => {
@@ -193,13 +241,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       timers.current.clear();
     };
-    window.addEventListener("beforeunload", flush);
-    return () => window.removeEventListener("beforeunload", flush);
+    const hide = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", hide);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", hide);
+    };
   }, [enqueueSave]);
 
   const removeNote = useCallback(async (note: Note) => {
+    const timer = timers.current.get(note.id);
+    if (timer) clearTimeout(timer);
+    timers.current.delete(note.id);
+    try { localStorage.removeItem(noteDraftKey(tabId.current, note.id)); } catch {}
     await deleteRecord("notes", note.id);
-    setNotes((current) => current.filter((item) => item.id !== note.id));
+    notesRef.current = notesRef.current.filter((item) => item.id !== note.id);
+    setNotes(notesRef.current);
     toast.success("笔记已删除");
   }, []);
 
@@ -232,14 +290,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const startReconstruction = useCallback(async (asset: Asset, retryJob?: Job) => {
     const now = new Date().toISOString();
-    const job: Job = retryJob ? { ...retryJob, status: "queued", progress: 0, errorMessage: undefined, retryCount: retryJob.retryCount + 1, updatedAt: now } : {
-      id: crypto.randomUUID(), assetId: asset.id, courseId: asset.courseId, assetName: asset.name, jobType: "ocr", status: "queued", progress: 0, retryCount: 0, createdAt: now, updatedAt: now,
+    const existingDocuments = await getAll("documents");
+    const extractionVersion = Math.max(0, ...existingDocuments.filter((item) => item.assetId === asset.id).map((item) => item.extractionVersion)) + 1;
+    const document: ReconstructionDocument = { id: `document-${asset.id}-v${extractionVersion}`, assetId: asset.id, courseId: asset.courseId, extractionVersion, status: "processing", blocks: [], updatedAt: now };
+    const job: Job = retryJob ? { ...retryJob, documentId: document.id, status: "queued", progress: 0, errorMessage: undefined, retryCount: retryJob.retryCount + 1, updatedAt: now } : {
+      id: crypto.randomUUID(), assetId: asset.id, courseId: asset.courseId, assetName: asset.name, jobType: "ocr", documentId: document.id, status: "queued", progress: 0, retryCount: 0, createdAt: now, updatedAt: now,
     };
     await putRecord("jobs", job);
     setJobs((current) => retryJob ? current.map((item) => item.id === job.id ? job : item) : [job, ...current]);
-    const document: ReconstructionDocument = { id: `document-${asset.id}`, assetId: asset.id, courseId: asset.courseId, extractionVersion: 1, status: "processing", blocks: [], updatedAt: now };
     await putRecord("documents", document);
-    setDocuments((current) => [document, ...current.filter((item) => item.assetId !== asset.id)]);
+    setDocuments((current) => [document, ...current]);
     const updateJob = async (patch: Partial<Job>) => {
       Object.assign(job, patch, { updatedAt: new Date().toISOString() });
       await putRecord("jobs", job);
@@ -258,7 +318,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         toast.success("结构化重建完成，可以逐段校对");
       } catch (error) {
         await updateJob({ status: "failed", errorMessage: error instanceof Error ? error.message : "识别失败，请重试" });
-        await putRecord("documents", { ...document, status: "failed" });
+        const failed = { ...document, status: "failed" as const, updatedAt: new Date().toISOString() };
+        await putRecord("documents", failed);
+        setDocuments((current) => current.map((item) => item.id === failed.id ? failed : item));
         toast.error("重建未完成", { description: error instanceof Error ? error.message : "请稍后重试" });
       }
     })();

@@ -32,6 +32,8 @@ export default function PdfViewer({ asset, noteId, onNoteChange, focusAnchor }: 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageWidth, setStageWidth] = useState(0);
   const renderTask = useRef<{ cancel: () => void } | null>(null);
   const startPoint = useRef<{ x: number; y: number } | null>(null);
 
@@ -42,7 +44,7 @@ export default function PdfViewer({ asset, noteId, onNoteChange, focusAnchor }: 
     setError("");
     setPdf(null);
     void asset.blob.arrayBuffer().then((data) => {
-      loadingTask = pdfjs.getDocument({ data });
+      loadingTask = pdfjs.getDocument({ data, cMapUrl: "/pdfjs/cmaps/", cMapPacked: true, standardFontDataUrl: "/pdfjs/standard_fonts/" });
       return loadingTask.promise;
     }).then((loaded) => {
       if (!active) return;
@@ -57,6 +59,15 @@ export default function PdfViewer({ asset, noteId, onNoteChange, focusAnchor }: 
   }, [asset.id, asset.blob]);
 
   useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const observer = new ResizeObserver(([entry]) => setStageWidth(entry.contentRect.width));
+    observer.observe(stage);
+    setStageWidth(stage.clientWidth);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     if (focusAnchor?.assetId !== asset.id) return;
     if (focusAnchor.page) setPageNumber(focusAnchor.page);
     setHighlight(focusAnchor.bbox ?? null);
@@ -68,7 +79,10 @@ export default function PdfViewer({ asset, noteId, onNoteChange, focusAnchor }: 
     async function render() {
       const page = await pdf!.getPage(pageNumber);
       if (cancelled || !canvasRef.current || !textLayerRef.current) return;
-      const viewport = page.getViewport({ scale: 1.22 * zoom });
+      const baseViewport = page.getViewport({ scale: 1 });
+      const availableWidth = Math.max(260, (stageWidth || stageRef.current?.clientWidth || 800) - 50);
+      const fitScale = Math.min(1.35, Math.max(0.4, availableWidth / baseViewport.width));
+      const viewport = page.getViewport({ scale: fitScale * zoom });
       const outputScale = Math.min(window.devicePixelRatio || 1, 2);
       const canvas = canvasRef.current;
       const context = canvas.getContext("2d");
@@ -78,14 +92,11 @@ export default function PdfViewer({ asset, noteId, onNoteChange, focusAnchor }: 
       canvas.style.width = `${Math.floor(viewport.width)}px`;
       canvas.style.height = `${Math.floor(viewport.height)}px`;
       canvas.style.aspectRatio = `${viewport.width} / ${viewport.height}`;
-      const task = page.render({ canvasContext: context, viewport, canvas, transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined });
-      renderTask.current = task;
-      await task.promise;
-      if (cancelled) return;
       const textContent = await page.getTextContent();
+      if (cancelled || !textLayerRef.current) return;
       const textLayer = textLayerRef.current;
       textLayer.innerHTML = "";
-      textLayer.style.setProperty("--scale-factor", String(1.22 * zoom));
+      textLayer.style.setProperty("--scale-factor", String(viewport.scale));
       for (const item of textContent.items) {
         if (!("str" in item) || !item.str) continue;
         const transform = pdfjs.Util.transform(viewport.transform, item.transform);
@@ -102,12 +113,15 @@ export default function PdfViewer({ asset, noteId, onNoteChange, focusAnchor }: 
           if (targetWidth > 0) { span.style.transform = `scaleX(${targetWidth / span.offsetWidth})`; span.style.transformOrigin = "left top"; }
         }
       }
+      const task = page.render({ canvasContext: context, viewport, canvas, transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined });
+      renderTask.current = task;
+      await task.promise;
     }
     void render().catch((renderError: unknown) => {
       if (!cancelled && !(renderError instanceof Error && renderError.name === "RenderingCancelledException")) setError("这一页渲染失败，请尝试其他页面或下载原件。");
     });
     return () => { cancelled = true; renderTask.current?.cancel(); };
-  }, [pdf, pageNumber, zoom, query]);
+  }, [pdf, pageNumber, zoom, query, stageWidth]);
 
   const pageBox = () => pageRef.current?.getBoundingClientRect();
   const normalizedRegion = (value: Region): BBox => {
@@ -216,7 +230,7 @@ export default function PdfViewer({ asset, noteId, onNoteChange, focusAnchor }: 
       <div className="zoom-controls"><button className="icon-button" onClick={() => setZoom((value) => Math.max(.6, value - .15))} aria-label="缩小"><Minus size={16} /></button><button onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button><button className="icon-button" onClick={() => setZoom((value) => Math.min(2.2, value + .15))} aria-label="放大"><Plus size={16} /></button></div>
     </div>
     {searchOpen && <div className="pdf-search-bar"><Search size={15} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} placeholder="在这份 PDF 中查找…" /><button onClick={() => void search()}>查找</button><button className="icon-button" onClick={() => { setSearchOpen(false); setQuery(""); }} aria-label="关闭搜索"><X size={15} /></button></div>}
-    <div className={`pdf-stage ${regionMode ? "region-active" : ""}`}>
+    <div className={`pdf-stage ${regionMode ? "region-active" : ""}`} ref={stageRef}>
       {loading && <div className="viewer-loading"><LoaderCircle className="spin" size={24} /><span>正在准备 PDF 与文字层…</span></div>}
       {error && <div className="viewer-error"><ScanText size={32} /><strong>暂时无法预览</strong><p>{error}</p></div>}
       {!loading && !error && <div className="pdf-page" ref={pageRef} style={{ aspectRatio: canvasRef.current?.style.aspectRatio }}>

@@ -7,3 +7,5 @@ dist/
 *.tsbuildinfo
 .qoder-sites/
 .qoder-sites.json
+public/pdfjs/
+.qoder-workspace-*.png
