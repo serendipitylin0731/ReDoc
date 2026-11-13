@@ -50,7 +50,7 @@ function SourceExcerpt({ block, onChange, onResolve }: { block: NoteBlock; onCha
 const blockNames: Record<BlockType, string> = { heading1: "一级标题", heading2: "二级标题", heading3: "三级标题", paragraph: "正文", bullet: "项目列表", numbered: "编号列表", quote: "引用", code: "代码块", math: "公式", table: "表格", image: "图片", excerpt: "资料摘录" };
 
 export default function NoteEditor({ note, onResolveSource }: { note: Note; onResolveSource: (anchorId: string) => void }) {
-  const { updateNote, saveStates, anchors, getPreference } = useWorkspace();
+  const { updateNote, saveStates, anchors, getPreference, setNoteCursor } = useWorkspace();
   const past = useRef<Note[]>([]);
   const future = useRef<Note[]>([]);
   const [tagDraft, setTagDraft] = useState("");
@@ -161,7 +161,7 @@ export default function NoteEditor({ note, onResolveSource }: { note: Note; onRe
       <textarea className="note-title-input" aria-label="笔记标题" rows={2} value={note.title} onChange={(event) => patch({ title: event.target.value })} />
       <div className="note-tags">{note.tags.map((tag) => <span key={tag}>#{tag}<button aria-label={`移除标签 ${tag}`} onClick={() => patch({ tags: note.tags.filter((item) => item !== tag) })}><X size={11} /></button></span>)}<input value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} onKeyDown={(event) => { if ((event.key === "Enter" || event.key === ",") && tagDraft.trim()) { event.preventDefault(); if (!note.tags.includes(tagDraft.trim())) patch({ tags: [...note.tags, tagDraft.trim()] }); setTagDraft(""); } }} placeholder="+ 添加标签" /></div>
       <div className="note-divider"><span /></div>
-      <div className="note-blocks">{note.blocks.map((block, index) => <div className={`note-block note-block-${block.type}`} data-block-id={block.id} key={block.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropBlock(event, block.id)}>
+      <div className="note-blocks">{note.blocks.map((block, index) => <div className={`note-block note-block-${block.type}`} data-block-id={block.id} key={block.id} onFocusCapture={() => setNoteCursor(note.id, index)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropBlock(event, block.id)}>
         <div className="block-grip" draggable onDragStart={(event) => { event.dataTransfer.setData("text/redoc-block", block.id); event.dataTransfer.effectAllowed = "move"; }} title="拖动排序"><GripVertical size={15} /></div>
         {block.type === "bullet" && <span className="list-marker">•</span>}{block.type === "numbered" && <span className="numbered-marker">{note.blocks.slice(0, index + 1).filter((item) => item.type === "numbered").length}.</span>}
         <div className="block-content">{block.type === "math" ? <MathBlock block={block} onChange={(text) => patchBlock(block.id, { text })} /> : block.type === "table" ? <TableBlock block={block} onChange={(rows) => patchBlock(block.id, { rows })} /> : block.type === "excerpt" ? <SourceExcerpt block={block} onChange={(text) => patchBlock(block.id, { text })} onResolve={() => block.sourceAnchorId ? onResolveSource(block.sourceAnchorId) : undefined} /> : block.type === "image" ? <div className="note-image-block">{block.src && <img src={block.src} alt={block.text} />}<EditableText block={block} onChange={(text) => patchBlock(block.id, { text })} onEnter={() => addBlock("paragraph", block.id)} onEmpty={() => deleteBlock(block.id)} /></div> : <EditableText block={block} onChange={(text) => patchBlock(block.id, { text })} onEnter={() => addBlock("paragraph", block.id)} onEmpty={() => deleteBlock(block.id)} />}</div>

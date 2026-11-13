@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { deleteRecord, detectAssetKind, getAll, getDb, getRecord, putRecord, saveNote, seedDemo, sha256, sourceLabel } from "@app/lib/db";
+import { deleteRecord, detectAssetKind, getAll, getDb, getRecord, putRecord, saveNote, sha256, sourceLabel } from "@app/lib/db";
 import { reconstructAsset } from "@app/lib/reconstruct";
 import type { Asset, Course, ExcerptInput, Folder, Job, Note, NoteBlock, ReconstructionDocument, SourceAnchor } from "@app/types";
 
@@ -25,6 +25,9 @@ interface WorkspaceContextValue {
   updateNote: (note: Note, immediate?: boolean) => void;
   removeNote: (note: Note) => Promise<void>;
   addExcerpt: (input: ExcerptInput) => Promise<string>;
+  noteCursor: { noteId: string; index: number } | null;
+  setNoteCursor: (noteId: string, index: number) => void;
+  insertOcrBlocks: (noteId: string, blocks: NoteBlock[]) => void;
   resolveAnchor: (anchorId: string) => Promise<{ anchor: SourceAnchor; asset?: Asset } | undefined>;
   startReconstruction: (asset: Asset, retryJob?: Job) => Promise<Job>;
   setPreference: <T>(key: string, value: T) => Promise<void>;
@@ -49,6 +52,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [documents, setDocuments] = useState<ReconstructionDocument[]>([]);
   const [saveStates, setSaveStates] = useState<WorkspaceContextValue["saveStates"]>({});
+  const [noteCursor, setNoteCursorState] = useState<WorkspaceContextValue["noteCursor"]>(null);
   const notesRef = useRef<Note[]>([]);
   const tabId = useRef("");
   if (!tabId.current) {
@@ -105,7 +109,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     let active = true;
     async function initialize() {
       try {
-        await seedDemo();
         const db = await getDb();
         const running = await db.getAll("jobs");
         const interrupted = running.filter((job) => job.status === "running" || job.status === "queued");
@@ -287,6 +290,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return target.id;
   }, [createNote, updateNote]);
 
+  const setNoteCursor = useCallback((noteId: string, index: number) => {
+    setNoteCursorState((current) => current?.noteId === noteId && current.index === index ? current : { noteId, index });
+  }, []);
+
+  const insertOcrBlocks = useCallback((noteId: string, blocks: NoteBlock[]) => {
+    const target = notesRef.current.find((note) => note.id === noteId);
+    if (!target || !blocks.length) return;
+    const index = noteCursor?.noteId === noteId ? noteCursor.index + 1 : target.blocks.length;
+    const nextBlocks = [...target.blocks];
+    nextBlocks.splice(index, 0, ...blocks);
+    updateNote({ ...target, blocks: nextBlocks }, true);
+  }, [noteCursor, updateNote]);
+
   const resolveAnchor = useCallback(async (anchorId: string) => {
     const anchor = await getRecord("anchors", anchorId);
     if (!anchor) return undefined;
@@ -337,9 +353,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value: WorkspaceContextValue = {
-    loading, courses, folders, assets, notes, anchors, jobs, documents, saveStates,
+    loading, courses, folders, assets, notes, anchors, jobs, documents, saveStates, noteCursor,
     createCourse, updateCourse, createFolder, uploadFiles, renameAsset, moveAssetToFolder, deleteAsset, createNote, updateNote, removeNote,
-    addExcerpt, resolveAnchor, startReconstruction, setPreference, getPreference, refresh,
+    addExcerpt, setNoteCursor, insertOcrBlocks, resolveAnchor, startReconstruction, setPreference, getPreference, refresh,
   };
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

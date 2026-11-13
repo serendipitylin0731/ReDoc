@@ -26,7 +26,7 @@ export default function WorkspacePage() {
   const courseAssets = assets.filter((asset) => asset.courseId === courseId);
   const courseNotes = notes.filter((note) => note.courseId === courseId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const currentAsset = courseAssets.find((asset) => asset.id === searchParams.get("file")) ?? courseAssets[0];
-  const currentNote = courseNotes.find((note) => note.id === searchParams.get("note")) ?? courseNotes.find((note) => note.id === "demo-note-gradient") ?? courseNotes[0];
+  const currentNote = courseNotes.find((note) => note.id === searchParams.get("note")) ?? courseNotes[0];
   const [fileSearch, setFileSearch] = useState("");
   const [folderFilter, setFolderFilter] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -102,7 +102,7 @@ export default function WorkspacePage() {
   if (!course) return null;
   return <div className="workspace-page">
     <header className="workspace-header">
-      <div className="workspace-breadcrumb"><button onClick={() => navigate(`/courses/${course.id}`)} className="course-breadcrumb-icon" aria-label="返回课程"><BookOpen size={18} /></button><div><span><button onClick={() => navigate("/courses")}>我的课程</button><ChevronRight size={11} />{course.title}</span><strong>资料与笔记工作台</strong></div></div>
+      <div className="workspace-breadcrumb"><button onClick={() => navigate("/workbench")} className="course-breadcrumb-icon" aria-label="返回工作台首页" title="工作台首页"><BookOpen size={18} /></button><div><span><button onClick={() => navigate("/workbench")}>工作台</button><ChevronRight size={11} />{course.title}</span><strong>资料整理笔记</strong></div></div>
       <div className="workspace-selectors"><label className="workspace-select"><BookOpen size={15} /><select aria-label="切换资料" value={currentAsset?.id ?? ""} onChange={(event) => selectAsset(event.target.value)}>{courseAssets.map((asset) => <option value={asset.id} key={asset.id}>{asset.name}</option>)}</select><ChevronDown size={13} /></label><span className="selector-link">→</span><label className="workspace-select note-select"><FileText size={15} /><select aria-label="切换笔记" value={currentNote?.id ?? ""} onChange={(event) => selectNote(event.target.value)}>{courseNotes.map((note) => <option value={note.id} key={note.id}>{note.title}</option>)}</select><ChevronDown size={13} /></label></div>
       <div className="workspace-header-actions"><button className="toolbar-button new-note-button" onClick={() => void newNote()}><FilePlus2 size={15} />新建 Note</button>{currentNote && <ExportMenu note={currentNote} compact />}</div>
     </header>

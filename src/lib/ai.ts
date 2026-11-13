@@ -1,5 +1,5 @@
 import { blocksToMarkdown } from "@app/lib/export";
-import type { Note, OrganizeResult, SourceAnchor } from "@app/types";
+import type { Note, NoteBlock, OrganizeResult, SourceAnchor } from "@app/types";
 
 export async function organizeNote(note: Note, anchors: SourceAnchor[], signal?: AbortSignal): Promise<OrganizeResult> {
   const response = await fetch("/functions/v1/app/api/organize", {
@@ -19,7 +19,24 @@ export async function organizeNote(note: Note, anchors: SourceAnchor[], signal?:
   return { title: result.title, markdown: result.markdown, model: result.model };
 }
 
-export function markdownToBlocks(markdown: string) {
+export async function correctDocument(markdown: string, signal?: AbortSignal): Promise<string> {
+  const response = await fetch("/functions/v1/app/api/organize", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "correct", title: "", markdown }),
+    signal,
+  });
+  const result = await response.json().catch(() => null) as { markdown?: unknown; error?: unknown } | null;
+  if (!response.ok) {
+    if (result?.error === "service_not_configured") throw new Error("service_not_configured");
+    throw new Error("ai_correction_failed");
+  }
+  if (!result || typeof result.markdown !== "string" || !result.markdown.trim()) throw new Error("ai_correction_failed");
+  return result.markdown;
+}
+
+export function markdownToBlocks(markdown: string): NoteBlock[] {
   return markdown.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean).map((part) => {
     const id = crypto.randomUUID();
     if (part.startsWith("### ")) return { id, type: "heading3" as const, text: part.replace(/^###\s+/, "") };

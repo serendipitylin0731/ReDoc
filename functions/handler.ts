@@ -1,6 +1,7 @@
 interface OrganizePayload {
   title?: unknown;
   markdown?: unknown;
+  mode?: unknown;
 }
 
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
@@ -27,8 +28,9 @@ function parseResult(content: string) {
   let parsed: { title?: unknown; markdown?: unknown };
   try { parsed = JSON.parse(cleaned) as { title?: unknown; markdown?: unknown }; }
   catch { throw new Error("invalid_model_result"); }
-  if (typeof parsed.title !== "string" || typeof parsed.markdown !== "string" || !parsed.markdown.trim()) throw new Error("invalid_model_result");
-  return { title: parsed.title.slice(0, 120), markdown: parsed.markdown.slice(0, 24000) };
+  if (typeof parsed.markdown !== "string" || !parsed.markdown.trim()) throw new Error("invalid_model_result");
+  const title = typeof parsed.title === "string" ? parsed.title.slice(0, 120) : "";
+  return { title, markdown: parsed.markdown.slice(0, 24000) };
 }
 
 export async function handler(request: Request, apiKey = Deno.env.get("DEEPSEEK_API")): Promise<Response> {
@@ -51,7 +53,11 @@ export async function handler(request: Request, apiKey = Deno.env.get("DEEPSEEK_
   } catch {
     return response({ ok: false, error: "invalid_json" }, 400);
   }
-  if (typeof payload.title !== "string" || typeof payload.markdown !== "string" || !payload.markdown.trim() || payload.title.length > 160 || payload.markdown.length > 30000) {
+  const mode = payload.mode === "correct" ? "correct" : "organize";
+  if (typeof payload.markdown !== "string" || !payload.markdown.trim() || payload.markdown.length > 30000) {
+    return response({ ok: false, error: "invalid_note" }, 400);
+  }
+  if (mode === "organize" && (typeof payload.title !== "string" || payload.title.length > 160)) {
     return response({ ok: false, error: "invalid_note" }, 400);
   }
   if (!consumeRateLimit(request)) return response({ ok: false, error: "rate_limited" }, 429);
@@ -66,12 +72,18 @@ export async function handler(request: Request, apiKey = Deno.env.get("DEEPSEEK_
         temperature: 0.2,
         max_tokens: 1800,
         response_format: { type: "json_object" },
-        messages: [
+        messages: mode === "correct" ? [
+          {
+            role: "system",
+            content: "你是 ReDoc 的文档校对助手。用户提供的是 OCR 或 PDF 文字层提取的 Markdown，可能存在错字、断句、多余换行和标点问题。请在不改变原意、不补充原文没有的内容的前提下，修正明显错误，把被错误拆分的段落合并，保留标题层级、公式（LaTeX）、表格、有序/无序列表和引用结构；不确定的内容原样保留，不要杜撰。只输出 JSON，格式为 {\"markdown\":\"修正后的 Markdown\"}。",
+          },
+          { role: "user", content: payload.markdown },
+        ] : [
           {
             role: "system",
             content: "你是 ReDoc 的学习笔记整理助手。只能重组和概括用户提供的笔记，不得补充资料中没有的事实、公式、数值或引用。保留所有公式 LaTeX 与“来源：”标记，不得编造来源。输出一个适合复习的中文提纲：按主题组织，保留关键概念和自测问题，合并重复表达，使用二级或三级标题、短段落和列表。所有不确定内容明确写“待核对”。只输出 JSON，格式为 {\"title\":\"简短标题\",\"markdown\":\"整理后的 Markdown\"}，markdown 不要包含一级标题。",
           },
-          { role: "user", content: `笔记标题：${payload.title}\n\n原始笔记：\n${payload.markdown}` },
+          { role: "user", content: `笔记标题：${typeof payload.title === "string" ? payload.title : ""}\n\n原始笔记：\n${payload.markdown}` },
         ],
       }),
       signal: controller.signal,

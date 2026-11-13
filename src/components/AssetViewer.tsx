@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import PdfViewer from "@app/components/PdfViewer";
 import { downloadOriginal } from "@app/lib/export";
-import { ocrImage } from "@app/lib/reconstruct";
+import { ocrImage, ocrTextToBlocks } from "@app/lib/reconstruct";
 import { useWorkspace } from "@app/state/WorkspaceContext";
 import type { Asset, SourceAnchor } from "@app/types";
 
@@ -15,7 +15,7 @@ type BBox = [number, number, number, number];
 interface Region { x: number; y: number; width: number; height: number }
 
 function ImageViewer({ asset, noteId, onNoteChange, focusAnchor }: ViewerProps) {
-  const { addExcerpt } = useWorkspace();
+  const { addExcerpt, insertOcrBlocks } = useWorkspace();
   const [url, setUrl] = useState("");
   const [regionMode, setRegionMode] = useState(false);
   const [region, setRegion] = useState<Region | null>(null);
@@ -46,15 +46,25 @@ function ImageViewer({ asset, noteId, onNoteChange, focusAnchor }: ViewerProps) 
     if (!context) return;
     context.drawImage(image, region.x * scaleX, region.y * scaleY, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
     const imageDataUrl = canvas.toDataURL("image/png");
-    const bbox: BBox = [region.x / box.width, region.y / box.height, (region.x + region.width) / box.width, (region.y + region.height) / box.height];
-    let text: string | undefined;
     if (withOcr) {
       setOcrProgress(0);
-      try { text = (await ocrImage(imageDataUrl, setOcrProgress)).text.trim(); }
-      catch { toast.warning("OCR 未完成，原图仍会保留在笔记中"); }
-      finally { setOcrProgress(null); }
+      try {
+        const result = await ocrImage(imageDataUrl, setOcrProgress);
+        const blocks = ocrTextToBlocks(result.text);
+        if (blocks.length) { insertOcrBlocks(noteId, blocks); onNoteChange(noteId); }
+        else toast.warning("未识别到文字，可重新框选或改为截图。");
+      } catch {
+        toast.error("OCR 未完成，请重试。");
+      } finally {
+        setOcrProgress(null);
+        setRegion(null);
+        setRegionMode(false);
+        setHighlight(null);
+      }
+      return;
     }
-    const id = await addExcerpt({ asset, noteId, kind: "image_region", page: 1, bbox, imageDataUrl, text });
+    const bbox: BBox = [region.x / box.width, region.y / box.height, (region.x + region.width) / box.width, (region.y + region.height) / box.height];
+    const id = await addExcerpt({ asset, noteId, kind: "image_region", page: 1, bbox, imageDataUrl });
     onNoteChange(id);
     setHighlight(bbox);
     setRegion(null);
@@ -143,7 +153,7 @@ export default function AssetViewer(props: ViewerProps) {
   const canReconstruct = ["pdf", "image", "markdown", "text"].includes(asset.kind);
   const KindIcon = asset.kind === "pdf" || asset.kind === "markdown" || asset.kind === "text" ? FileText : asset.kind === "image" ? FileImage : asset.kind === "video" ? Video : asset.kind === "audio" ? AudioLines : asset.kind === "csv" ? Table2 : FileArchive;
   return <div className="asset-viewer" ref={containerRef}>
-    <div className="asset-viewer-header"><div className="asset-heading"><span className="asset-kind-icon"><KindIcon size={18} /></span><div><strong>{asset.name}</strong><span>{asset.demo ? "独立演示资料" : "我的原始资料"} · v{asset.version} · {(asset.size / 1024).toFixed(1)} KB</span></div></div><div className="asset-header-actions">{showConvert && canReconstruct && <button className="toolbar-button reconstruct-button" onClick={() => navigate(`/courses/${asset.courseId}/convert?file=${asset.id}`)}><ScanText size={15} /><span>转文字文档</span><ChevronRight size={13} /></button>}<button className="icon-button" onClick={() => downloadOriginal(asset)} title="下载原件" aria-label="下载原件"><Download size={16} /></button><button className="icon-button" onClick={() => void containerRef.current?.requestFullscreen()} title="全屏查看" aria-label="全屏查看"><Expand size={16} /></button></div></div>
+    <div className="asset-viewer-header"><div className="asset-heading"><span className="asset-kind-icon"><KindIcon size={18} /></span><div><strong>{asset.name}</strong><span>原始资料 · v{asset.version} · {(asset.size / 1024).toFixed(1)} KB</span></div></div><div className="asset-header-actions">{showConvert && canReconstruct && <button className="toolbar-button reconstruct-button" onClick={() => navigate(`/courses/${asset.courseId}/convert?file=${asset.id}`)}><ScanText size={15} /><span>转文字文档</span><ChevronRight size={13} /></button>}<button className="icon-button" onClick={() => downloadOriginal(asset)} title="下载原件" aria-label="下载原件"><Download size={16} /></button><button className="icon-button" onClick={() => void containerRef.current?.requestFullscreen()} title="全屏查看" aria-label="全屏查看"><Expand size={16} /></button></div></div>
     <div className="asset-viewer-content">{asset.kind === "pdf" ? <PdfViewer {...props} /> : asset.kind === "image" ? <ImageViewer {...props} /> : ["markdown", "text", "csv"].includes(asset.kind) ? <TextViewer {...props} /> : asset.kind === "video" ? <VideoViewer {...props} /> : asset.kind === "audio" ? <AudioViewer asset={asset} /> : <UnsupportedViewer asset={asset} />}</div>
   </div>;
 }

@@ -1,4 +1,5 @@
 import { getRecord } from "@app/lib/db";
+import { correctDocument, markdownToBlocks } from "@app/lib/ai";
 import type { Asset, BlockType, NoteBlock, SourceAnchor } from "@app/types";
 import type { PDFPageProxy } from "pdfjs-dist";
 
@@ -23,7 +24,7 @@ function joinLines(lines: string[]) {
   }, "");
 }
 
-function parseText(text: string) {
+export function parseText(text: string) {
   const lines = text.replace(/\r/g, "").split("\n");
   const blocks: ParsedBlock[] = [];
   let paragraph: string[] = [];
@@ -71,15 +72,41 @@ function parseText(text: string) {
     const numbered = /^\d+[.)]\s+(.+)$/.exec(line);
     if (numbered) { flush(); blocks.push({ type: "numbered", text: numbered[1].trim() }); continue; }
     if (/^>\s?/.test(line)) { flush(); blocks.push({ type: "quote", text: line.replace(/^>\s?/, "") }); continue; }
-    if ((line.startsWith("$$") && line.endsWith("$$") && line.length > 4) || (line.startsWith("\\[") && line.endsWith("\\]"))) {
+    if ((line.startsWith("$$") && line.endsWith("$$") && line.length > 4) || (line.startsWith("\\[") && line.endsWith("\\]")) || /^\$[^$]+\$$/.test(line)) {
       flush();
-      blocks.push({ type: "math", text: line.replace(/^\$\$|\$\$$/g, "").replace(/^\\\[|\\\]$/g, "").trim() });
+      blocks.push({ type: "math", text: line.replace(/^\$\$|\$\$$|^\$|\$$/g, "").replace(/^\\\[|\\\]$/g, "").trim() });
       continue;
     }
     paragraph.push(line);
   }
   flush();
   return blocks;
+}
+
+function blocksToMarkdownString(blocks: ParsedBlock[]) {
+  const lines: string[] = [];
+  for (const block of blocks) {
+    if (block.type === "heading1") lines.push(`# ${block.text}`, "");
+    else if (block.type === "heading2") lines.push(`## ${block.text}`, "");
+    else if (block.type === "heading3") lines.push(`### ${block.text}`, "");
+    else if (block.type === "bullet") lines.push(`- ${block.text}`);
+    else if (block.type === "numbered") lines.push(`1. ${block.text}`);
+    else if (block.type === "quote") lines.push(`> ${block.text}`, "");
+    else if (block.type === "code") lines.push("```", block.text, "```", "");
+    else if (block.type === "math") lines.push("$$", block.text, "$$", "");
+    else if (block.type === "table" && block.rows) {
+      block.rows.forEach((row, index) => {
+        lines.push(`| ${row.map((cell) => cell.replace(/\|/g, "\\|")).join(" | ")} |`);
+        if (index === 0) lines.push(`| ${row.map(() => "---").join(" | ")} |`);
+      });
+      lines.push("");
+    } else lines.push(block.text, "");
+  }
+  return lines.join("\n").replace(/\n{4,}/g, "\n\n\n");
+}
+
+export function ocrTextToBlocks(text: string) {
+  return parseText(text).map((parsed): NoteBlock => ({ id: crypto.randomUUID(), type: parsed.type, text: parsed.text, rows: parsed.rows }));
 }
 
 function textBlocks(text: string, asset: Asset, page: number, anchors: SourceAnchor[]) {
@@ -94,13 +121,6 @@ function textBlocks(text: string, asset: Asset, page: number, anchors: SourceAnc
       sourceSnapshot: { assetName: asset.name, label: `${asset.name} · 第 ${page} 页`, text: parsed.text },
     };
   });
-}
-
-function originalImageBlock(asset: Asset, page: number, src: string): NoteBlock {
-  return {
-    id: crypto.randomUUID(), type: "image", text: asset.kind === "image" ? "原始图片" : `原始页面 · 第 ${page} 页`, src,
-    sourceSnapshot: { assetName: asset.name, label: `${asset.name} · 第 ${page} 页`, imageDataUrl: src },
-  };
 }
 
 function pdfText(items: PdfTextItem[]) {
@@ -139,13 +159,33 @@ async function renderPage(page: PDFPageProxy, scale: number) {
   return canvas;
 }
 
-function blobDataUrl(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("原始图片读取失败"));
-    reader.readAsDataURL(blob);
-  });
+function trimContent(canvas: HTMLCanvasElement, padding: number) {
+  const context = canvas.getContext("2d");
+  if (!context) return canvas.toDataURL("image/jpeg", 0.8);
+  const { width, height } = canvas;
+  const data = context.getImageData(0, 0, width, height).data;
+  let minX = width, minY = height, maxX = -1, maxY = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      if (data[offset] < 246 || data[offset + 1] < 246 || data[offset + 2] < 246) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return canvas.toDataURL("image/jpeg", 0.8);
+  const left = Math.max(0, minX - padding);
+  const top = Math.max(0, minY - padding);
+  const right = Math.min(width, maxX + 1 + padding);
+  const bottom = Math.min(height, maxY + 1 + padding);
+  const output = document.createElement("canvas");
+  output.width = right - left;
+  output.height = bottom - top;
+  output.getContext("2d")?.drawImage(canvas, left, top, output.width, output.height, 0, 0, output.width, output.height);
+  return output.toDataURL("image/jpeg", 0.8);
 }
 
 async function getOcrLanguage() {
@@ -163,23 +203,42 @@ async function recognizeImage(source: Blob | string, onProgress: (progress: numb
   return { text: result.data.text, confidence: result.data.confidence };
 }
 
+function imageBlock(asset: Asset, page: number, src: string): NoteBlock {
+  return {
+    id: crypto.randomUUID(), type: "image", text: asset.kind === "image" ? "原始图片" : `第 ${page} 页`, src,
+    sourceSnapshot: { assetName: asset.name, label: `${asset.name} · 第 ${page} 页`, imageDataUrl: src },
+  };
+}
+
+async function correctBlocks(parsed: ParsedBlock[]) {
+  try {
+    const corrected = await correctDocument(blocksToMarkdownString(parsed));
+    const blocks = markdownToBlocks(corrected);
+    if (blocks.length) return blocks;
+  } catch {
+    // 校正不可用或失败时保留原始提取结果，不阻塞转换。
+  }
+  return null;
+}
+
 export async function reconstructAsset(asset: Asset, onProgress: (progress: number) => void): Promise<ReconstructionResult> {
   const anchors: SourceAnchor[] = [];
   if (asset.kind === "image") {
     onProgress(8);
-    const [result, imageDataUrl] = await Promise.all([
-      recognizeImage(asset.blob, (progress) => onProgress(Math.max(8, progress)), await getOcrLanguage()),
-      blobDataUrl(asset.blob),
-    ]);
+    const result = await recognizeImage(asset.blob, (progress) => onProgress(Math.max(8, progress)), await getOcrLanguage());
     if (!result.text.trim()) throw new Error("未识别到文字，请尝试更清晰的图片。");
-    const blocks = [originalImageBlock(asset, 1, imageDataUrl), ...textBlocks(result.text, asset, 1, anchors)];
-    return { blocks, anchors };
+    const parsed = parseText(result.text);
+    const corrected = await correctBlocks(parsed);
+    onProgress(100);
+    return { blocks: corrected ?? textBlocks(result.text, asset, 1, anchors), anchors };
   }
   if (asset.kind === "markdown" || asset.kind === "text") {
     const text = asset.textContent ?? await asset.blob.text();
-    const blocks = textBlocks(text, asset, 1, anchors);
-    if (!blocks.length) throw new Error("文件中没有可转换的文字。");
-    return { blocks, anchors };
+    const parsed = parseText(text);
+    if (!parsed.length) throw new Error("文件中没有可转换的文字。");
+    const corrected = await correctBlocks(parsed);
+    onProgress(100);
+    return { blocks: corrected ?? textBlocks(text, asset, 1, anchors), anchors };
   }
   if (asset.kind !== "pdf") throw new Error("当前格式暂不支持转换，请选择 PDF、图片或文本文件。");
   const pdfjs = await import("pdfjs-dist");
@@ -187,27 +246,38 @@ export async function reconstructAsset(asset: Asset, onProgress: (progress: numb
   pdfjs.GlobalWorkerOptions.workerPort = new worker.default();
   const data = await asset.blob.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data, cMapUrl: "/pdfjs/cmaps/", cMapPacked: true, standardFontDataUrl: "/pdfjs/standard_fonts/" }).promise;
-  const blocks: NoteBlock[] = [];
+  const pageImages: NoteBlock[] = [];
+  let fullText = "";
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const content = await page.getTextContent();
-    const text = pdfText(content.items as PdfTextItem[]);
+    let text = pdfText(content.items as PdfTextItem[]);
     const scanned = text.replace(/\s/g, "").length < 12;
-    const canvas = await renderPage(page, scanned ? 1.6 : 1.15);
-    const pageImage = canvas.toDataURL("image/jpeg", 0.76);
-    blocks.push({ id: crypto.randomUUID(), type: "heading2", text: `第 ${pageNumber} 页` });
-    blocks.push(originalImageBlock(asset, pageNumber, pageImage));
+    const canvas = await renderPage(page, scanned ? 1.6 : 1.3);
+    const imageDataUrl = trimContent(canvas, 10);
     if (scanned) {
       const result = await recognizeImage(canvas.toDataURL("image/png"), (progress) => {
         onProgress(Math.round(((pageNumber - 1 + progress / 100) / pdf.numPages) * 100));
       }, await getOcrLanguage());
-      blocks.push(...textBlocks(result.text, asset, pageNumber, anchors));
-    } else {
-      blocks.push(...textBlocks(text, asset, pageNumber, anchors));
+      text = result.text.trim();
     }
+    if (text.trim()) {
+      const endsBlank = /\n\s*\n\s*$/.test(text);
+      const startsBlank = /^\s*\n\s*\n/.test(text);
+      fullText += (fullText ? (endsBlank || startsBlank ? "\n\n" : "\n") : "") + text;
+    }
+    if (imageDataUrl) pageImages.push(imageBlock(asset, pageNumber, imageDataUrl));
     onProgress(Math.round((pageNumber / pdf.numPages) * 100));
   }
-  if (!blocks.some((block) => !["heading2", "image"].includes(block.type))) throw new Error("未发现可转换的文字，请尝试更清晰的文件。");
+  const parsed = parseText(fullText);
+  if (!parsed.length) throw new Error("未发现可转换的文字，请尝试更清晰的文件。");
+  onProgress(96);
+  let blocks = await correctBlocks(parsed);
+  if (!blocks) blocks = textBlocks(fullText, asset, 1, anchors);
+  if (pageImages.length) {
+    blocks = [...blocks, { id: crypto.randomUUID(), type: "heading2", text: "原始页面与插图" }, ...pageImages];
+  }
+  onProgress(100);
   return { blocks, anchors };
 }
 
