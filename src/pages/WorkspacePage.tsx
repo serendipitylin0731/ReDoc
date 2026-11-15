@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowLeft, BookOpen, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Crop, Download, File, FileImage, FileText, Folder, FolderInput, FolderOpen, FolderPlus, MoreHorizontal, PanelRightClose, PanelRightOpen, Pencil, Plus, Search, ScanText, Trash2, Upload, Video, X } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import JSZip from "jszip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import AssetViewer from "@app/components/AssetViewer";
 import ConvertPanel from "@app/components/ConvertPanel";
@@ -23,6 +24,8 @@ function searchableText(asset: Asset) {
   return asset.textContent ?? "";
 }
 
+const KIND_LABELS: Record<string, string> = { pdf: "PDF", image: "图片", markdown: "Markdown", text: "文本", video: "视频", audio: "音频", csv: "CSV", office: "Office", unsupported: "其他" };
+
 export default function WorkspacePage() {
   const { courseId = "" } = useParams();
   const { courses, assets, notes, folders, createNote, updateNote, renameAsset, moveAssetToFolder, deleteAsset, removeNote, createFolder, getPreference, setPreference } = useWorkspace();
@@ -37,6 +40,7 @@ export default function WorkspacePage() {
   const [workbenchOpen, setWorkbenchOpen] = useState(true);
   const [regionMode, setRegionMode] = useState(false);
   const [region, setRegion] = useState<RegionBBox | null>(null);
+  const [pdfSource, setPdfSource] = useState<{ id: string; name: string; markdown: string; courseId: string } | null>(null);
   const [fileQuery, setFileQuery] = useState("");
   const [formatFilter, setFormatFilter] = useState("");
   const [filesOpen, setFilesOpen] = useState(true);
@@ -71,8 +75,15 @@ export default function WorkspacePage() {
     setSearchParams(next);
     setTab("note");
     setWorkbenchOpen(true);
+    setPdfSource(null);
   };
   const newNote = async () => { const note = await createNote(courseId); selectNote(note.id); };
+  const exportPdf = async (asset: Asset) => {
+    const markdown = asset.textContent ?? await asset.blob.text();
+    setPdfSource({ id: asset.id, name: asset.name, markdown, courseId });
+    setTab("pdf");
+    setWorkbenchOpen(true);
+  };
   const toggleRegion = (value?: boolean) => {
     const next = value ?? !regionMode;
     setRegionMode(next);
@@ -98,6 +109,15 @@ export default function WorkspacePage() {
     const name = window.prompt("新建文件夹");
     if (name?.trim()) await createFolder(courseId, name.trim());
   };
+  const downloadCourseZip = async () => {
+    const zip = new JSZip();
+    for (const asset of courseAssets) zip.file(asset.name, asset.blob);
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a"); link.href = url; link.download = `${course?.title ?? "课程"}.zip`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const availableKinds = [...new Set(courseAssets.map((asset) => asset.kind))];
 
   const fileRow = (asset: Asset, indent: number) => <div className={`file-list-item ${currentAsset?.id === asset.id ? "active" : ""}`} key={asset.id} style={{ paddingLeft: `${10 + indent * 14}px` }}>
     <button className="file-main-button" onClick={() => selectAsset(asset.id)}><span className={`file-type-icon type-${asset.kind}`}><AssetIcon asset={asset} /></span><span className="file-item-copy"><strong>{asset.name}</strong><small>{asset.kind.toUpperCase()} · {(asset.size / 1024).toFixed(0)} KB</small></span></button>
@@ -127,17 +147,16 @@ export default function WorkspacePage() {
     <header className="course-workspace-header">
       <button className="back-link" onClick={() => navigate("/courses")}><ArrowLeft size={15} />课程</button>
       <h1>{course.title}</h1>
-      <button className="toolbar-button" onClick={() => void addFolder()}><FolderPlus size={15} />新建文件夹</button>
-      <UploadDialog courseId={courseId} onUploaded={(uploaded) => { if (uploaded[0]) selectAsset(uploaded[0].id); }} trigger={<button className="primary-button"><Upload size={15} />导入资料</button>} />
+      <button className="toolbar-button" onClick={() => void downloadCourseZip()} title="下载整个课程为压缩包"><Download size={15} />打包下载</button>
     </header>
     <div className="workspace-body">
       <aside className="file-sidebar">
         <div className="file-sidebar-filters">
           <label className="course-search"><Search size={15} /><input value={fileQuery} onChange={(event) => setFileQuery(event.target.value)} placeholder="搜索文件名或内容…" />{fileQuery && <button onClick={() => setFileQuery("")}><X size={13} /></button>}</label>
-          <select className="format-filter" aria-label="按格式筛选" value={formatFilter} onChange={(event) => setFormatFilter(event.target.value)}><option value="">全部格式</option><option value="pdf">PDF</option><option value="image">图片</option><option value="markdown">Markdown</option><option value="text">文本</option><option value="video">视频</option><option value="audio">音频</option><option value="csv">CSV</option><option value="office">Office</option></select>
+          <select className="format-filter" aria-label="按格式筛选" value={formatFilter} onChange={(event) => setFormatFilter(event.target.value)}><option value="">全部格式</option>{availableKinds.map((kind) => <option value={kind} key={kind}>{KIND_LABELS[kind] ?? kind.toUpperCase()}</option>)}</select>
         </div>
         <div className="file-section">
-          <div className="file-section-head"><button onClick={() => setFilesOpen((value) => !value)}>{filesOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>文件</span><small>{courseAssets.length}</small></button></div>
+          <div className="file-section-head"><button onClick={() => setFilesOpen((value) => !value)}>{filesOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>文件</span><small>{courseAssets.length}</small></button><button className="section-icon-button" onClick={() => void addFolder()} title="新建文件夹" aria-label="新建文件夹"><FolderPlus size={15} /></button><UploadDialog courseId={courseId} onUploaded={(uploaded) => { if (uploaded[0]) selectAsset(uploaded[0].id); }} trigger={<button className="section-icon-button" title="导入资料" aria-label="导入资料"><Upload size={15} /></button>} /></div>
           {filesOpen && <div className="vscode-tree">{filteredRoot.map((asset) => fileRow(asset, 0))}{filteredFolders.map(folderNode)}{!filteredRoot.length && !filteredFolders.length && <div className="file-list-empty"><Search size={20} /><span>没有匹配的文件</span></div>}</div>}
         </div>
         <div className="file-section notes-section">
@@ -146,7 +165,7 @@ export default function WorkspacePage() {
         </div>
       </aside>
       <div className="split-workspace" ref={splitContainer}>
-        <section className="viewer-column" style={workbenchOpen ? { width: `${split}%` } : { flex: 1 }} aria-label="原始资料">{currentAsset ? <AssetViewer asset={currentAsset} noteId={currentNote?.id ?? ""} onNoteChange={(id) => selectNote(id)} onConvert={() => { setTab("convert"); setWorkbenchOpen(true); }} regionMode={regionMode} onRegionModeChange={toggleRegion} onRegion={setRegion} /> : <div className="no-asset-overlay"><Upload size={30} /><h3>从第一份资料开始</h3><p>导入 PDF、图片或课程文本，即可在右侧工作台做笔记、转文字或编译 PDF。</p><UploadDialog courseId={courseId} trigger={<button className="primary-button"><Plus size={16} />导入课程资料</button>} /></div>}</section>
+        <section className="viewer-column" style={workbenchOpen ? { width: `${split}%` } : { flex: 1 }} aria-label="原始资料">{currentAsset ? <AssetViewer asset={currentAsset} noteId={currentNote?.id ?? ""} onNoteChange={(id) => selectNote(id)} onConvert={() => { setTab("convert"); setWorkbenchOpen(true); }} onExportPdf={() => void exportPdf(currentAsset)} regionMode={regionMode} onRegionModeChange={toggleRegion} onRegion={setRegion} /> : <div className="no-asset-overlay"><Upload size={30} /><h3>从第一份资料开始</h3><p>导入 PDF、图片或课程文本，即可在右侧工作台做笔记、转文字或编译 PDF。</p><UploadDialog courseId={courseId} trigger={<button className="primary-button"><Plus size={16} />导入课程资料</button>} /></div>}</section>
         {workbenchOpen && <div className="split-divider" onPointerDown={beginSplit} role="separator" aria-label="调整资料与工作台宽度" aria-valuenow={Math.round(split)} tabIndex={0}><span><ChevronsLeft size={12} /><ChevronsRight size={12} /></span></div>}
         {workbenchOpen ? <section className="note-column workbench-column" style={{ width: `${100 - split}%` }} aria-label="集成工作台">
           <div className="workbench-tabs">
@@ -160,7 +179,7 @@ export default function WorkspacePage() {
             </div>
           </div>
           <div className="workbench-body">
-            {tab === "note" ? (currentNote ? <NoteEditor note={currentNote} /> : <div className="empty-note"><FileText size={28} /><p>创建一篇 Note 开始整理</p><button className="primary-button" onClick={() => void newNote()}><Plus size={15} />新建 Note</button></div>) : tab === "convert" ? (currentAsset ? <ConvertPanel asset={currentAsset} courseId={courseId} region={region} regionMode={regionMode} onRegionModeChange={toggleRegion} /> : <div className="empty-note"><ScanText size={28} /><p>请先在左侧选择要转换的资料。</p></div>) : (currentNote ? <PdfExportPanel note={currentNote} /> : <div className="empty-note"><FileText size={28} /><p>先创建一篇笔记再编译为 PDF。</p></div>)}
+            {tab === "note" ? (currentNote ? <NoteEditor note={currentNote} /> : <div className="empty-note"><FileText size={28} /><p>创建一篇 Note 开始整理</p><button className="primary-button" onClick={() => void newNote()}><Plus size={15} />新建 Note</button></div>) : tab === "convert" ? (currentAsset ? <ConvertPanel asset={currentAsset} courseId={courseId} region={region} regionMode={regionMode} onRegionModeChange={toggleRegion} /> : <div className="empty-note"><ScanText size={28} /><p>请先在左侧选择要转换的资料。</p></div>) : (pdfSource || currentNote) ? <PdfExportPanel note={pdfSource ? null : currentNote} file={pdfSource} /> : <div className="empty-note"><FileText size={28} /><p>暂时没有待编译文件</p></div>}
           </div>
         </section> : <button className="reopen-note-pane" onClick={() => setWorkbenchOpen(true)} title="打开工作台" aria-label="打开工作台"><PanelRightOpen size={22} /><span>工作台</span></button>}
       </div>

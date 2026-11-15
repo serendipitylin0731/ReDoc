@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { AudioLines, Camera, ChevronRight, Download, Expand, File, FileArchive, FileImage, FileText, Play, ScanText, Table2, Video } from "lucide-react";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import PdfViewer from "@app/components/PdfViewer";
 import { downloadOriginal } from "@app/lib/export";
+import { renderMarkdownHtml } from "@app/lib/markdown";
 import { ocrImage, ocrTextToBlocks } from "@app/lib/reconstruct";
 import { useWorkspace } from "@app/state/WorkspaceContext";
 import type { Asset } from "@app/types";
 
-interface ViewerProps { asset: Asset; noteId: string; onNoteChange: (id: string) => void; showConvert?: boolean; onConvert?: () => void; regionMode?: boolean; onRegionModeChange?: (value: boolean) => void; onRegion?: (bbox: BBox | null) => void }
+interface ViewerProps { asset: Asset; noteId: string; onNoteChange: (id: string) => void; showConvert?: boolean; onConvert?: () => void; onExportPdf?: () => void; regionMode?: boolean; onRegionModeChange?: (value: boolean) => void; onRegion?: (bbox: BBox | null) => void }
 type BBox = [number, number, number, number];
 interface Region { x: number; y: number; width: number; height: number }
 
@@ -86,12 +85,23 @@ function ImageViewer({ asset, noteId, onNoteChange, regionMode = false, onRegion
 }
 
 function TextViewer({ asset, noteId }: ViewerProps) {
-  const { addExcerpt } = useWorkspace();
+  const { addExcerpt, assets } = useWorkspace();
   const [text, setText] = useState(asset.textContent ?? "");
   const [selection, setSelection] = useState<{ text: string; top: number; left: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (!asset.textContent) void asset.blob.text().then(setText); else setText(asset.textContent); }, [asset]);
-  const html = useMemo(() => asset.kind === "markdown" ? DOMPurify.sanitize(marked.parse(text) as string) : "", [asset.kind, text]);
+  const imageUrls = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of assets.filter((entry) => entry.courseId === asset.courseId && entry.kind === "image")) map.set(item.name, URL.createObjectURL(item.blob));
+    return map;
+  }, [assets, asset.courseId]);
+  useEffect(() => () => { imageUrls.forEach((url) => URL.revokeObjectURL(url)); }, [imageUrls]);
+  const resolveImage = (src: string) => {
+    if (/^(https?:|data:|blob:)/.test(src)) return src;
+    const name = decodeURIComponent(src.split("/").pop()?.split(/[?#]/)[0] ?? "");
+    return imageUrls.get(name) ?? src;
+  };
+  const html = useMemo(() => (asset.kind === "markdown" ? renderMarkdownHtml(text, resolveImage) : ""), [asset.kind, text, imageUrls]);
   const selectText = () => {
     const selected = window.getSelection();
     const value = selected?.toString().trim() ?? "";
@@ -148,14 +158,14 @@ function UnsupportedViewer({ asset }: { asset: Asset }) {
 }
 
 export default function AssetViewer(props: ViewerProps) {
-  const { asset, showConvert = true, onConvert } = props;
+  const { asset, showConvert = true, onConvert, onExportPdf } = props;
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const canReconstruct = ["pdf", "image", "markdown", "text"].includes(asset.kind);
   const openConvert = () => { if (onConvert) onConvert(); else navigate(`/courses/${asset.courseId}/convert?file=${asset.id}`); };
   const KindIcon = asset.kind === "pdf" || asset.kind === "markdown" || asset.kind === "text" ? FileText : asset.kind === "image" ? FileImage : asset.kind === "video" ? Video : asset.kind === "audio" ? AudioLines : asset.kind === "csv" ? Table2 : FileArchive;
   return <div className="asset-viewer" ref={containerRef}>
-    <div className="asset-viewer-header"><div className="asset-heading"><span className="asset-kind-icon"><KindIcon size={18} /></span><div><strong>{asset.name}</strong><span>原始资料 · v{asset.version} · {(asset.size / 1024).toFixed(1)} KB</span></div></div><div className="asset-header-actions">{showConvert && canReconstruct && <button className="toolbar-button reconstruct-button" onClick={openConvert}><ScanText size={15} /><span>转文字文档</span><ChevronRight size={13} /></button>}<button className="icon-button" onClick={() => downloadOriginal(asset)} title="下载原件" aria-label="下载原件"><Download size={16} /></button><button className="icon-button" onClick={() => void containerRef.current?.requestFullscreen()} title="全屏查看" aria-label="全屏查看"><Expand size={16} /></button></div></div>
+    <div className="asset-viewer-header"><div className="asset-heading"><span className="asset-kind-icon"><KindIcon size={18} /></span><div><strong>{asset.name}</strong><span>原始资料 · v{asset.version} · {(asset.size / 1024).toFixed(1)} KB</span></div></div><div className="asset-header-actions">{(["markdown", "text"].includes(asset.kind)) && <button className="toolbar-button reconstruct-button" onClick={() => onExportPdf?.()} title="编译为 PDF"><FileText size={15} /><span>导出 PDF</span></button>}{showConvert && canReconstruct && <button className="toolbar-button reconstruct-button" onClick={openConvert}><ScanText size={15} /><span>转文字文档</span><ChevronRight size={13} /></button>}<button className="icon-button" onClick={() => downloadOriginal(asset)} title="下载原件" aria-label="下载原件"><Download size={16} /></button><button className="icon-button" onClick={() => void containerRef.current?.requestFullscreen()} title="全屏查看" aria-label="全屏查看"><Expand size={16} /></button></div></div>
     <div className="asset-viewer-content">{asset.kind === "pdf" ? <PdfViewer {...props} /> : asset.kind === "image" ? <ImageViewer {...props} /> : ["markdown", "text", "csv"].includes(asset.kind) ? <TextViewer {...props} /> : asset.kind === "video" ? <VideoViewer {...props} /> : asset.kind === "audio" ? <AudioViewer asset={asset} /> : <UnsupportedViewer asset={asset} />}</div>
   </div>;
 }

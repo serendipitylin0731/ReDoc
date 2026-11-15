@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Check, Cloud, Database, Download, HardDrive, Languages, LoaderCircle, Palette, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, Cloud, Database, Download, HardDrive, Languages, LoaderCircle, Palette, ShieldCheck, Sparkles } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { applyTheme, type ThemePreference } from "@app/lib/theme";
 import { useWorkspace } from "@app/state/WorkspaceContext";
@@ -12,6 +13,7 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 
 export default function SettingsPage() {
   const { assets, notes, anchors, getPreference, setPreference } = useWorkspace();
+  const navigate = useNavigate();
   const [usage, setUsage] = useState<{ used: number; quota: number } | null>(null);
   const [language, setLanguage] = useState("chi_sim+eng");
   const [cloudAllowed, setCloudAllowed] = useState(false);
@@ -33,7 +35,7 @@ export default function SettingsPage() {
     toast.success("笔记与来源元数据已备份", { description: "原始文件请通过资料列表分别下载。" });
   };
   const changeTheme = (value: ThemePreference) => { setTheme(value); applyTheme(value); void setPreference("theme", value); };
-  return <div className="page-container settings-page"><div className="page-heading-row compact-heading"><div><span className="eyebrow">WORKSPACE PREFERENCES</span><h1>偏好设置</h1><p>清楚知道资料保存在哪里、何时会发送到云端，以及识别能力边界。</p></div><span className="settings-saved"><Check size={14} />设置自动保存</span></div><div className="settings-layout"><div className="settings-main">
+  return <div className="page-container settings-page"><button className="back-link" onClick={() => navigate("/courses")}><ArrowLeft size={15} />返回课程</button><div className="page-heading-row compact-heading"><div><span className="eyebrow">WORKSPACE PREFERENCES</span><h1>偏好设置</h1><p>清楚知道资料保存在哪里、何时会发送到云端，以及识别能力边界。</p></div><span className="settings-saved"><Check size={14} />设置自动保存</span></div><div className="settings-layout"><div className="settings-main">
     <section className="settings-section"><div className="settings-section-heading"><span className="settings-icon"><Palette size={19} /></span><div><h2>外观</h2><p>选择界面的明暗模式</p></div></div><div className="theme-options">{THEME_OPTIONS.map((option) => <button key={option.value} className={`theme-option ${theme === option.value ? "active" : ""}`} onClick={() => changeTheme(option.value)}>{option.label}</button>)}</div></section>
     <section className="settings-section"><div className="settings-section-heading"><span className="settings-icon"><HardDrive size={19} /></span><div><h2>本地存储</h2><p>IndexedDB 持久化 · 无需注册</p></div></div><div className="storage-meter"><div><span>浏览器已用空间</span><strong>{usage ? `${(usage.used / 1024 / 1024).toFixed(1)} MB` : `${megabytes.toFixed(1)} MB`}</strong></div><span className="storage-track"><i style={{ width: `${usage?.quota ? Math.max(2, Math.min(100, usage.used / usage.quota * 100)) : 2}%` }} /></span><small>{usage?.quota ? `当前设备可用配额约 ${(usage.quota / 1024 / 1024 / 1024).toFixed(1)} GB` : "浏览器会根据设备空间自动分配配额"}</small></div><div className="settings-facts"><span><Database size={15} />{assets.length} 份原始资料</span><span>{notes.length} 篇持久化笔记</span><span>{anchors.length} 条来源锚点</span></div><button className="toolbar-button" onClick={backup}><Download size={15} />备份笔记与来源元数据</button></section>
     <section className="settings-section"><div className="settings-section-heading"><span className="settings-icon"><Languages size={19} /></span><div><h2>结构化识别</h2><p>本地 Tesseract OCR · 数字 PDF 优先文字层</p></div></div><label className="settings-field"><span><strong>识别语言</strong><small>扫描件与图片使用中英文混合模型，首次识别需下载语言数据。</small></span><select value={language} onChange={(event) => { setLanguage(event.target.value); void setPreference("ocr-language", event.target.value); }}><option value="chi_sim+eng">简体中文 + English</option><option value="eng">English</option></select></label><div className="setting-note"><ShieldCheck size={16} /><span>OCR 在当前设备执行，不会把课程图片发送到第三方 OCR 服务。刷新会中断任务，可在任务页安全重试。</span></div></section>

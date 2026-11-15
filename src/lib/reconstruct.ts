@@ -256,10 +256,69 @@ async function cropImageBlob(blob: Blob, bbox: RegionBBox) {
 
 export interface ReconstructOptions { region?: RegionBBox; ignoreHeaderFooter?: boolean }
 
+function normalizedText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function removeRunningLines(texts: string[]) {
+  const perPage = texts.map((value) => value.split("\n").map((line) => line.trim()).filter(Boolean));
+  if (perPage.length < 3) return texts;
+  const counts = new Map<string, number>();
+  for (const lines of perPage) {
+    for (const line of new Set(lines)) counts.set(line, (counts.get(line) ?? 0) + 1);
+  }
+  const threshold = Math.max(2, Math.round(perPage.length * 0.6));
+  const running = new Set([...counts.entries()].filter(([, count]) => count >= threshold).map(([line]) => line));
+  return perPage.map((lines) => lines.filter((line) => !running.has(line)).join("\n"));
+}
+
+function similarPages(a: string, b: string) {
+  const x = normalizedText(a);
+  const y = normalizedText(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (Math.abs(x.length - y.length) > Math.max(x.length, y.length) * 0.25) return false;
+  const set = new Set(x.split(""));
+  let shared = 0;
+  for (const ch of y) if (set.has(ch)) shared += 1;
+  return shared / Math.max(x.length, y.length) > 0.85;
+}
+
+function mergeSimilarPages(texts: string[], images: NoteBlock[]) {
+  const mergedTexts: string[] = [];
+  const mergedImages: NoteBlock[] = [];
+  for (let index = 0; index < texts.length; index += 1) {
+    if (mergedTexts.length && similarPages(texts[index], mergedTexts[mergedTexts.length - 1])) {
+      mergedTexts[mergedTexts.length - 1] = texts[index];
+      mergedImages[mergedImages.length - 1] = images[index];
+    } else {
+      mergedTexts.push(texts[index]);
+      mergedImages.push(images[index]);
+    }
+  }
+  return { text: mergedTexts.join("\n\n").trim(), images: mergedImages };
+}
+
+function dedupeHeadings(blocks: NoteBlock[]) {
+  const result: NoteBlock[] = [];
+  let lastHeading = "";
+  for (const block of blocks) {
+    if (block.type === "heading1" || block.type === "heading2" || block.type === "heading3") {
+      const key = `${block.type}:${normalizedText(block.text)}`;
+      if (key === lastHeading) continue;
+      lastHeading = key;
+    } else {
+      lastHeading = "";
+    }
+    result.push(block);
+  }
+  return result;
+}
+
 export async function reconstructAsset(asset: Asset, onProgress: (progress: number) => void, options: ReconstructOptions = {}): Promise<ReconstructionResult> {
   const anchors: SourceAnchor[] = [];
-  const headerFooterBand: RegionBBox = [0, 0.07, 1, 0.93];
-  const region = options.region ?? (options.ignoreHeaderFooter !== false ? headerFooterBand : null);
+  const region = options.region ?? null;
+  const ignoreHeaderFooter = options.ignoreHeaderFooter !== false;
   if (asset.kind === "image") {
     onProgress(8);
     const source = region ? await cropImageBlob(asset.blob, region) : asset.blob;
@@ -285,7 +344,7 @@ export async function reconstructAsset(asset: Asset, onProgress: (progress: numb
   const data = await asset.blob.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data, cMapUrl: "/pdfjs/cmaps/", cMapPacked: true, standardFontDataUrl: "/pdfjs/standard_fonts/" }).promise;
   const pageImages: NoteBlock[] = [];
-  let fullText = "";
+  const pageTexts: string[] = [];
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const baseViewport = page.getViewport({ scale: 1 });
@@ -305,21 +364,21 @@ export async function reconstructAsset(asset: Asset, onProgress: (progress: numb
       text = pdfText(items);
     }
     const imageDataUrl = region ? cropCanvas(canvas, region).toDataURL("image/jpeg", 0.8) : trimContent(canvas, 10);
-    if (text.trim()) {
-      const endsBlank = /\n\s*\n\s*$/.test(text);
-      const startsBlank = /^\s*\n\s*\n/.test(text);
-      fullText += (fullText ? (endsBlank || startsBlank ? "\n\n" : "\n") : "") + text;
-    }
+    pageTexts.push(text.trim());
     if (imageDataUrl) pageImages.push(imageBlock(asset, pageNumber, imageDataUrl));
     onProgress(Math.round((pageNumber / pdf.numPages) * 100));
   }
+  const cleanTexts = ignoreHeaderFooter ? removeRunningLines(pageTexts) : pageTexts;
+  const merged = mergeSimilarPages(cleanTexts, pageImages);
+  const fullText = merged.text;
   const parsed = parseText(fullText);
   if (!parsed.length) throw new Error("未发现可转换的文字，请尝试更清晰的文件。");
   onProgress(96);
   let blocks = await correctBlocks(parsed);
   if (!blocks) blocks = textBlocks(fullText, asset, 1, anchors);
-  if (pageImages.length) {
-    blocks = [...blocks, { id: crypto.randomUUID(), type: "heading2", text: "原始页面与插图" }, ...pageImages];
+  blocks = dedupeHeadings(blocks);
+  if (merged.images.length) {
+    blocks = [...blocks, { id: crypto.randomUUID(), type: "heading2", text: "原始页面与插图" }, ...merged.images];
   }
   onProgress(100);
   return { blocks, anchors };

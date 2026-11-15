@@ -2411,16 +2411,16 @@ html.dark { color-scheme: dark; }
 
 /* ===== 背景动效 ===== */
 .bg-scene { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
-.bg-scene .bg-blob { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .55; }
-.bg-scene .b1 { width: 560px; height: 560px; left: -120px; top: -140px; background: radial-gradient(circle, #c9dbfd 0%, transparent 65%); animation: blob-float-a 26s ease-in-out infinite; }
-.bg-scene .b2 { width: 480px; height: 480px; right: -100px; top: 28%; background: radial-gradient(circle, #d5e5fe 0%, transparent 65%); animation: blob-float-b 32s ease-in-out infinite; }
-.bg-scene .b3 { width: 440px; height: 440px; left: 32%; bottom: -150px; background: radial-gradient(circle, #bfd7fb 0%, transparent 65%); animation: blob-float-a 38s ease-in-out infinite reverse; }
+.bg-scene .bg-blob { position: absolute; border-radius: 50%; filter: blur(110px); opacity: .45; }
+.bg-scene .b1 { width: 620px; height: 620px; left: -140px; top: -160px; background: radial-gradient(circle, rgba(165,198,250,.9) 0%, rgba(180,210,250,.38) 48%, transparent 72%); animation: blob-float-a 26s ease-in-out infinite; }
+.bg-scene .b2 { width: 540px; height: 540px; right: -120px; top: 26%; background: radial-gradient(circle, rgba(190,215,252,.85) 0%, rgba(205,225,252,.35) 50%, transparent 74%); animation: blob-float-b 32s ease-in-out infinite; }
+.bg-scene .b3 { width: 500px; height: 500px; left: 30%; bottom: -170px; background: radial-gradient(circle, rgba(170,202,250,.85) 0%, rgba(185,212,250,.32) 50%, transparent 73%); animation: blob-float-a 38s ease-in-out infinite reverse; }
 @keyframes blob-float-a { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(52px, 42px) scale(1.1); } }
 @keyframes blob-float-b { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-46px, -32px) scale(1.12); } }
-html.dark .bg-scene .bg-blob { opacity: .4; }
-html.dark .bg-scene .b1 { background: radial-gradient(circle, #16295a 0%, transparent 65%); }
-html.dark .bg-scene .b2 { background: radial-gradient(circle, #1b3a6b 0%, transparent 65%); }
-html.dark .bg-scene .b3 { background: radial-gradient(circle, #13244c 0%, transparent 65%); }
+html.dark .bg-scene .bg-blob { opacity: .32; }
+html.dark .bg-scene .b1 { background: radial-gradient(circle, rgba(33,60,110,.9) 0%, rgba(40,70,120,.35) 50%, transparent 73%); }
+html.dark .bg-scene .b2 { background: radial-gradient(circle, rgba(40,72,125,.85) 0%, rgba(46,78,130,.32) 50%, transparent 74%); }
+html.dark .bg-scene .b3 { background: radial-gradient(circle, rgba(28,52,95,.85) 0%, rgba(34,60,105,.3) 50%, transparent 73%); }
 
 /* ===== 外观选项 ===== */
 .theme-options { display: flex; gap: 8px; }
@@ -2485,4 +2485,10 @@ html.dark .pdf-export-toolbar > span { color: #cbd5e1; }
 
 /* ===== PDF 缩放：整页随画布缩放，支持 Ctrl+滚轮 ===== */
 .pdf-page { width: fit-content; }
+
+/* ===== 侧栏分区小图标 ===== */
+.section-icon-button { display: grid; width: 24px; height: 24px; flex: none; place-items: center; border-radius: 6px; background: transparent; color: #64748b; }
+.section-icon-button:hover { background: #eaf1ff; color: #1d4ed8; }
+html.dark .section-icon-button { color: #64748b; }
+html.dark .section-icon-button:hover { background: #16233c; color: #93b4f8; }
 
