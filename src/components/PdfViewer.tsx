@@ -171,7 +171,7 @@ function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNo
     onRegion(null);
     onExitRegion();
   };
-  return <div className="pdf-page" ref={pageRef} style={{ aspectRatio: canvasRef.current?.style.aspectRatio }}>
+  return <div className="pdf-page" ref={pageRef}>
     <canvas ref={canvasRef} aria-label={`${asset.name} 第 ${pageNumber} 页`} />
     <div ref={textLayerRef} className="pdf-text-layer" onMouseUp={textSelect} />
     <div className="page-interaction-layer" style={{ pointerEvents: regionMode ? "auto" : "none" }} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} />
@@ -223,6 +223,18 @@ export default function PdfViewer({ asset, noteId, onNoteChange, regionMode = fa
     observer.observe(stage);
     setStageWidth(stage.clientWidth);
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const stage = scrollRef.current;
+    if (!stage) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      setZoom((value) => Math.max(0.5, Math.min(3, value + (event.deltaY < 0 ? 0.12 : -0.12))));
+    };
+    stage.addEventListener("wheel", onWheel, { passive: false });
+    return () => stage.removeEventListener("wheel", onWheel);
   }, []);
 
   useEffect(() => {

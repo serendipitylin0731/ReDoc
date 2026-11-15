@@ -1292,9 +1292,9 @@ body { background: linear-gradient(120deg, #f4f6fa, #eef3fb, #f6f8fc, #eef3fb, #
 .source-highlight > span { background: #2563eb; }
 .pdf-search-match { background: #93c5fd88 !important; box-shadow: 0 0 0 2px #93c5fd88 !important; }
 
-.continuous-pdf-stage { display: block; overflow-y: auto; background-color: #eef2f7; background-image: radial-gradient(#c7d4e8 0.55px, transparent .55px); background-size: 8px 8px; }
+.continuous-pdf-stage { display: block; overflow: auto; background-color: #eef2f7; background-image: radial-gradient(#c7d4e8 0.55px, transparent .55px); background-size: 8px 8px; }
 .pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 26px; padding: 20px 12px 60px; }
-.pdf-page-wrap { position: relative; width: 100%; max-width: 860px; }
+.pdf-page-wrap { position: relative; width: fit-content; max-width: none; margin: 0 auto; }
 .pdf-page-number { display: block; margin-bottom: 8px; color: #7d8ca1; font-size: 10px; text-align: center; }
 .inline-region-bar { position: absolute; z-index: 8; top: 0; right: 0; left: 0; border-top: 1px solid #cfe0f6; border-radius: 6px 6px 0 0; background: #eff6ff; color: #3b82f6; }
 
@@ -2479,4 +2479,7 @@ html.dark .convert-hf-toggle { color: #cbd5e1; }
 html.dark .pdf-export-panel { background: #0b1322; }
 html.dark .pdf-export-toolbar { border-bottom-color: #1f2a44; background: #0d1524; }
 html.dark .pdf-export-toolbar > span { color: #cbd5e1; }
+
+/* ===== PDF 缩放：整页随画布缩放，支持 Ctrl+滚轮 ===== */
+.pdf-page { width: fit-content; }
 
