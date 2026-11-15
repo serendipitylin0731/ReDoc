@@ -1436,6 +1436,7 @@ body { background: linear-gradient(120deg, #f4f6fa, #eef3fb, #f6f8fc, #eef3fb, #
 
 .app-header { position: sticky; top: 0; z-index: 40; display: flex; height: 56px; align-items: center; gap: 12px; padding: 0 18px; border-bottom: 1px solid #e2e8f0; background: #ffffffe8; backdrop-filter: blur(10px); }
 .app-header .brand strong { color: #172033; font-family: var(--site-font); font-size: 20px; font-weight: 750; letter-spacing: -.4px; }
+.brand-logo { display: block; width: 32px; height: 32px; object-fit: contain; }
 .app-header-spacer { flex: 1; }
 .app-sidebar, .mobile-header, .sidebar-scrim { display: none !important; }
 .app-main { min-height: calc(100dvh - 56px); margin-left: 0; }

@@ -3,7 +3,7 @@ import { Settings } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export function Brand() {
-  return <Link to="/courses" className="brand"><strong>ReDoc</strong></Link>;
+  return <Link to="/courses" className="brand"><img className="brand-logo" src="/redoc-logo.png" alt="" width="32" height="32" /><strong>ReDoc</strong></Link>;
 }
 
 export default function AppShell({ children }: { children: ReactNode }) {
