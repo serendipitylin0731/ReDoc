@@ -8,6 +8,7 @@ export function Brand() {
 
 export default function AppShell({ children }: { children: ReactNode }) {
   return <div className="app-shell">
+    <div className="bg-scene" aria-hidden="true"><i className="bg-blob b1" /><i className="bg-blob b2" /><i className="bg-blob b3" /></div>
     <header className="app-header">
       <Brand />
       <div className="app-header-spacer" />

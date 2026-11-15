@@ -1,7 +1,9 @@
+import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { LoaderCircle } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import AppShell, { Brand } from "@app/components/AppShell";
+import { applyTheme, type ThemePreference } from "@app/lib/theme";
 import { WorkspaceProvider, useWorkspace } from "@app/state/WorkspaceContext";
 import WorkspacePage from "@app/pages/WorkspacePage";
 import CoursesPage from "@app/pages/CoursesPage";
@@ -10,7 +12,15 @@ import SettingsPage from "@app/pages/SettingsPage";
 import ReconstructPage from "@app/pages/ReconstructPage";
 
 function AppRoutes() {
-  const { loading } = useWorkspace();
+  const { loading, getPreference } = useWorkspace();
+  useEffect(() => {
+    let active = true;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const refresh = () => void getPreference<ThemePreference>("theme", "system").then((pref) => { if (active) applyTheme(pref); });
+    void refresh();
+    media.addEventListener("change", refresh);
+    return () => { active = false; media.removeEventListener("change", refresh); };
+  }, [getPreference]);
   if (loading) return <div className="app-loading"><Brand /><LoaderCircle size={23} className="spin" /><span>正在打开你的课程资料…</span><small>资料、笔记与来源关系正在恢复</small></div>;
   return <AppShell><Routes>
     <Route path="/" element={<Navigate to="/courses" replace />} />
