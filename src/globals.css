@@ -1666,8 +1666,9 @@ html.dark .content-search {
 .note-select { display: flex; min-width: 0; height: 32px; flex: 1; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid #dce3ec; border-radius: 7px; background: #fff; color: #64748b; }
 .note-select select { min-width: 0; flex: 1; appearance: none; border: 0; background: transparent; color: #334155; font-size: 11px; }
 .note-column > .note-editor { min-height: 0; flex: 1; }
-.reopen-note-pane { display: flex; width: 34px; flex: none; flex-direction: column; align-items: center; gap: 8px; padding: 12px 0; border-left: 1px solid #dde3ec; background: #f8fafc; color: #64748b; }
-.reopen-note-pane span { writing-mode: vertical-rl; font-size: 10px; }
+.reopen-note-pane { display: flex; width: 48px; flex: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px 0; border-left: 1px solid #dde3ec; background: #f8fafc; color: #3b82f6; cursor: pointer; }
+.reopen-note-pane:hover { background: #eaf1ff; }
+.reopen-note-pane span { writing-mode: vertical-rl; font-size: 14px; font-weight: 650; letter-spacing: 1px; color: #1d4ed8; }
 
 .ready-status i, .status-dot { background: #60a5fa; }
 .ready-status { color: #64748b; }
@@ -1760,8 +1761,10 @@ html.dark .note-pane-header {
 }
 
 html.dark .reopen-note-pane {
- border-left-color: #1f2a44; background: #0d1524; 
+ border-left-color: #1f2a44; background: #0d1524; color: #93b4f8; 
 }
+html.dark .reopen-note-pane:hover { background: #16233c; }
+html.dark .reopen-note-pane span { color: #93b4f8; }
 
 html.dark .source-reference-icon {
  background: #16233c; color: #93b4f8; 

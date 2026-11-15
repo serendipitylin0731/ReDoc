@@ -162,7 +162,7 @@ export default function WorkspacePage() {
           <div className="workbench-body">
             {tab === "note" ? (currentNote ? <NoteEditor note={currentNote} /> : <div className="empty-note"><FileText size={28} /><p>创建一篇 Note 开始整理</p><button className="primary-button" onClick={() => void newNote()}><Plus size={15} />新建 Note</button></div>) : tab === "convert" ? (currentAsset ? <ConvertPanel asset={currentAsset} courseId={courseId} region={region} regionMode={regionMode} onRegionModeChange={toggleRegion} /> : <div className="empty-note"><ScanText size={28} /><p>请先在左侧选择要转换的资料。</p></div>) : (currentNote ? <PdfExportPanel note={currentNote} /> : <div className="empty-note"><FileText size={28} /><p>先创建一篇笔记再编译为 PDF。</p></div>)}
           </div>
-        </section> : <button className="reopen-note-pane" onClick={() => setWorkbenchOpen(true)} title="打开工作台" aria-label="打开工作台"><PanelRightOpen size={17} /><span>工作台</span></button>}
+        </section> : <button className="reopen-note-pane" onClick={() => setWorkbenchOpen(true)} title="打开工作台" aria-label="打开工作台"><PanelRightOpen size={22} /><span>工作台</span></button>}
       </div>
     </div>
   </div>;
