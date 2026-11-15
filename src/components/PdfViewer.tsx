@@ -25,11 +25,12 @@ interface PdfPageProps {
   onNoteChange: (id: string) => void;
   regionMode: boolean;
   onExitRegion: () => void;
+  onRegion: (bbox: BBox | null) => void;
   insertBlocks: (blocks: NoteBlock[]) => void;
   addScreenshot: (imageDataUrl: string, bbox: BBox) => void;
 }
 
-function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNoteChange, regionMode, onExitRegion, insertBlocks, addScreenshot }: PdfPageProps) {
+function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNoteChange, regionMode, onExitRegion, onRegion, insertBlocks, addScreenshot }: PdfPageProps) {
   const { addExcerpt } = useWorkspace();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
@@ -106,7 +107,9 @@ function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNo
     if (!bounds) return;
     const currentX = Math.max(0, Math.min(bounds.width, event.clientX - bounds.left));
     const currentY = Math.max(0, Math.min(bounds.height, event.clientY - bounds.top));
-    setRegion({ x: Math.min(startPoint.current.x, currentX), y: Math.min(startPoint.current.y, currentY), width: Math.abs(currentX - startPoint.current.x), height: Math.abs(currentY - startPoint.current.y) });
+    const next = { x: Math.min(startPoint.current.x, currentX), y: Math.min(startPoint.current.y, currentY), width: Math.abs(currentX - startPoint.current.x), height: Math.abs(currentY - startPoint.current.y) };
+    setRegion(next);
+    onRegion(normalizedRegion(next));
   };
   const pointerUp = () => { startPoint.current = null; };
   const textSelect = () => {
@@ -158,12 +161,14 @@ function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNo
       } finally {
         setOcrProgress(null);
         setRegion(null);
+        onRegion(null);
         onExitRegion();
       }
       return;
     }
     addScreenshot(imageDataUrl, bbox);
     setRegion(null);
+    onRegion(null);
     onExitRegion();
   };
   return <div className="pdf-page" ref={pageRef} style={{ aspectRatio: canvasRef.current?.style.aspectRatio }}>
@@ -172,11 +177,11 @@ function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNo
     <div className="page-interaction-layer" style={{ pointerEvents: regionMode ? "auto" : "none" }} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} />
     {region && regionMode && <div className="region-selection" style={{ left: region.x, top: region.y, width: region.width, height: region.height }}>{region.width > 20 && region.height > 20 && <div className="region-size">{Math.round(region.width)} × {Math.round(region.height)}</div>}</div>}
     {selection && !regionMode && <div className="selection-toolbar" style={{ left: selection.left, top: selection.top }} onMouseDown={(event) => event.preventDefault()}><button onClick={() => void addText()}><FilePlus2 size={14} />加入 Note</button><button onClick={() => void addText(true)}>新建 Note</button><button onClick={() => { void navigator.clipboard.writeText(selection.text); toast.success("已复制"); }} aria-label="复制"><Clipboard size={14} /></button></div>}
-    {regionMode && region && region.width > 20 && region.height > 20 && <div className="region-action-bar inline-region-bar"><span><Crop size={15} />第 {pageNumber} 页 · 已框选</span><div><button className="toolbar-button" onClick={() => setRegion(null)}>取消</button><button className="toolbar-button" disabled={ocrProgress !== null} onClick={() => void capture(true)}>{ocrProgress !== null ? <><LoaderCircle size={14} className="spin" />OCR {ocrProgress}%</> : <><ScanText size={14} />OCR 后加入</>}</button><button className="primary-button" disabled={ocrProgress !== null} onClick={() => void capture(false)}><Plus size={15} />截图加入 Note</button></div></div>}
+    {regionMode && region && region.width > 20 && region.height > 20 && <div className="region-action-bar inline-region-bar"><span><Crop size={15} />第 {pageNumber} 页 · 已框选</span><div><button className="toolbar-button" onClick={() => { setRegion(null); onRegion(null); }}>取消</button><button className="toolbar-button" disabled={ocrProgress !== null} onClick={() => void capture(true)}>{ocrProgress !== null ? <><LoaderCircle size={14} className="spin" />OCR {ocrProgress}%</> : <><ScanText size={14} />OCR 后加入</>}</button><button className="primary-button" disabled={ocrProgress !== null} onClick={() => void capture(false)}><Plus size={15} />截图加入 Note</button></div></div>}
   </div>;
 }
 
-export default function PdfViewer({ asset, noteId, onNoteChange }: { asset: Asset; noteId: string; onNoteChange: (id: string) => void }) {
+export default function PdfViewer({ asset, noteId, onNoteChange, regionMode = false, onRegionModeChange, onRegion }: { asset: Asset; noteId: string; onNoteChange: (id: string) => void; regionMode?: boolean; onRegionModeChange?: (value: boolean) => void; onRegion?: (bbox: BBox | null) => void }) {
   const { addExcerpt, insertOcrBlocks } = useWorkspace();
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
@@ -184,7 +189,6 @@ export default function PdfViewer({ asset, noteId, onNoteChange }: { asset: Asse
   const [zoom, setZoom] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [regionMode, setRegionMode] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [stageWidth, setStageWidth] = useState(800);
@@ -261,14 +265,14 @@ export default function PdfViewer({ asset, noteId, onNoteChange }: { asset: Asse
   return <div className="pdf-viewer">
     <div className="viewer-controls">
       <div className="page-controls"><button className="icon-button" disabled={pageNumber <= 1} onClick={() => pageRefs.current.get(pageNumber - 1)?.scrollIntoView({ behavior: "smooth" })} aria-label="上一页"><ChevronLeft size={17} /></button><label><input aria-label="当前页码" value={pageNumber} onChange={(event) => { const value = Number(event.target.value); if (value >= 1 && value <= pageCount) pageRefs.current.get(value)?.scrollIntoView({ behavior: "smooth" }); }} /> <span>/ {pageCount || "–"}</span></label><button className="icon-button" disabled={!pageCount || pageNumber >= pageCount} onClick={() => pageRefs.current.get(pageNumber + 1)?.scrollIntoView({ behavior: "smooth" })} aria-label="下一页"><ChevronRight size={17} /></button></div>
-      <div className="viewer-control-group"><button className={`toolbar-button ${regionMode ? "selected" : ""}`} onClick={() => setRegionMode((value) => !value)}><Crop size={15} />{regionMode ? "退出框选" : "框选摘录"}</button><button className={`icon-button ${searchOpen ? "selected" : ""}`} onClick={() => setSearchOpen((value) => !value)} aria-label="搜索 PDF"><Search size={16} /></button></div>
+      <div className="viewer-control-group"><button className={`icon-button ${searchOpen ? "selected" : ""}`} onClick={() => setSearchOpen((value) => !value)} aria-label="搜索 PDF"><Search size={16} /></button></div>
       <div className="zoom-controls"><button className="icon-button" onClick={() => setZoom((value) => Math.max(.6, value - .15))} aria-label="缩小"><Minus size={16} /></button><button onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button><button className="icon-button" onClick={() => setZoom((value) => Math.min(2.2, value + .15))} aria-label="放大"><Plus size={16} /></button></div>
     </div>
     {searchOpen && <div className="pdf-search-bar"><Search size={15} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} placeholder="在这份 PDF 中查找…" /><button onClick={() => void search()}>查找</button><button className="icon-button" onClick={() => { setSearchOpen(false); setQuery(""); }} aria-label="关闭搜索"><X size={15} /></button></div>}
     <div className={`pdf-stage continuous-pdf-stage ${regionMode ? "region-active" : ""}`} ref={scrollRef}>
       {loading && <div className="viewer-loading"><LoaderCircle className="spin" size={24} /><span>正在准备 PDF 与文字层…</span></div>}
       {error && <div className="viewer-error"><ScanText size={32} /><strong>暂时无法预览</strong><p>{error}</p></div>}
-      {!loading && !error && pdf && <div className="pdf-pages">{Array.from({ length: pageCount }, (_, index) => index + 1).map((number) => <div className="pdf-page-wrap" key={number} data-page-number={number} ref={(element) => { if (element) pageRefs.current.set(number, element); else pageRefs.current.delete(number); }}><span className="pdf-page-number">第 {number} 页</span><PdfPage pdf={pdf} pageNumber={number} zoom={zoom} stageWidth={stageWidth} query={query} asset={asset} noteId={noteId} onNoteChange={onNoteChange} regionMode={regionMode} onExitRegion={() => setRegionMode(false)} insertBlocks={insertBlocks} addScreenshot={addScreenshot} /></div>)}</div>}
+      {!loading && !error && pdf && <div className="pdf-pages">{Array.from({ length: pageCount }, (_, index) => index + 1).map((number) => <div className="pdf-page-wrap" key={number} data-page-number={number} ref={(element) => { if (element) pageRefs.current.set(number, element); else pageRefs.current.delete(number); }}><span className="pdf-page-number">第 {number} 页</span><PdfPage pdf={pdf} pageNumber={number} zoom={zoom} stageWidth={stageWidth} query={query} asset={asset} noteId={noteId} onNoteChange={onNoteChange} regionMode={regionMode} onExitRegion={() => onRegionModeChange?.(false)} onRegion={onRegion ?? (() => undefined)} insertBlocks={insertBlocks} addScreenshot={addScreenshot} /></div>)}</div>}
     </div>
   </div>;
 }

@@ -221,11 +221,49 @@ async function correctBlocks(parsed: ParsedBlock[]) {
   return null;
 }
 
-export async function reconstructAsset(asset: Asset, onProgress: (progress: number) => void): Promise<ReconstructionResult> {
+export type RegionBBox = [number, number, number, number];
+
+function cropCanvas(canvas: HTMLCanvasElement, bbox: RegionBBox) {
+  const w = canvas.width, h = canvas.height;
+  const sx = Math.max(0, Math.round(bbox[0] * w));
+  const sy = Math.max(0, Math.round(bbox[1] * h));
+  const sw = Math.max(1, Math.min(w - sx, Math.round((bbox[2] - bbox[0]) * w)));
+  const sh = Math.max(1, Math.min(h - sy, Math.round((bbox[3] - bbox[1]) * h)));
+  const out = document.createElement("canvas");
+  out.width = sw; out.height = sh;
+  out.getContext("2d")?.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  return out;
+}
+
+function filterItems(items: PdfTextItem[], bbox: RegionBBox, pageWidth: number, pageHeight: number) {
+  return items.filter((item) => {
+    const x = item.transform[4] / pageWidth;
+    const yTop = 1 - (item.transform[5] + (item.height || 0)) / pageHeight;
+    return x >= bbox[0] && x <= bbox[2] && yTop >= bbox[1] && yTop <= bbox[3];
+  });
+}
+
+async function cropImageBlob(blob: Blob, bbox: RegionBBox) {
+  const url = URL.createObjectURL(blob);
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = url; });
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+  canvas.getContext("2d")?.drawImage(img, 0, 0);
+  URL.revokeObjectURL(url);
+  const crop = cropCanvas(canvas, bbox);
+  return new Promise<Blob>((resolve, reject) => crop.toBlob((value) => value ? resolve(value) : reject(new Error("crop_failed")), "image/png"));
+}
+
+export interface ReconstructOptions { region?: RegionBBox; ignoreHeaderFooter?: boolean }
+
+export async function reconstructAsset(asset: Asset, onProgress: (progress: number) => void, options: ReconstructOptions = {}): Promise<ReconstructionResult> {
   const anchors: SourceAnchor[] = [];
+  const headerFooterBand: RegionBBox = [0, 0.07, 1, 0.93];
+  const region = options.region ?? (options.ignoreHeaderFooter !== false ? headerFooterBand : null);
   if (asset.kind === "image") {
     onProgress(8);
-    const result = await recognizeImage(asset.blob, (progress) => onProgress(Math.max(8, progress)), await getOcrLanguage());
+    const source = region ? await cropImageBlob(asset.blob, region) : asset.blob;
+    const result = await recognizeImage(source, (progress) => onProgress(Math.max(8, progress)), await getOcrLanguage());
     if (!result.text.trim()) throw new Error("未识别到文字，请尝试更清晰的图片。");
     const parsed = parseText(result.text);
     const corrected = await correctBlocks(parsed);
@@ -250,17 +288,23 @@ export async function reconstructAsset(asset: Asset, onProgress: (progress: numb
   let fullText = "";
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
+    const baseViewport = page.getViewport({ scale: 1 });
     const content = await page.getTextContent();
-    let text = pdfText(content.items as PdfTextItem[]);
-    const scanned = text.replace(/\s/g, "").length < 12;
+    const rawText = pdfText(content.items as PdfTextItem[]);
+    const scanned = rawText.replace(/\s/g, "").length < 12;
     const canvas = await renderPage(page, scanned ? 1.6 : 1.3);
-    const imageDataUrl = trimContent(canvas, 10);
+    let text = "";
     if (scanned) {
-      const result = await recognizeImage(canvas.toDataURL("image/png"), (progress) => {
+      const source = region ? cropCanvas(canvas, region).toDataURL("image/png") : canvas.toDataURL("image/png");
+      const result = await recognizeImage(source, (progress) => {
         onProgress(Math.round(((pageNumber - 1 + progress / 100) / pdf.numPages) * 100));
       }, await getOcrLanguage());
       text = result.text.trim();
+    } else {
+      const items = region ? filterItems(content.items as PdfTextItem[], region, baseViewport.width, baseViewport.height) : content.items as PdfTextItem[];
+      text = pdfText(items);
     }
+    const imageDataUrl = region ? cropCanvas(canvas, region).toDataURL("image/jpeg", 0.8) : trimContent(canvas, 10);
     if (text.trim()) {
       const endsBlank = /\n\s*\n\s*$/.test(text);
       const startsBlank = /^\s*\n\s*\n/.test(text);

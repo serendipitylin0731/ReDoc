@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { deleteRecord, detectAssetKind, getAll, getDb, getRecord, putRecord, saveNote, sha256 } from "@app/lib/db";
-import { reconstructAsset } from "@app/lib/reconstruct";
+import { reconstructAsset, type ReconstructOptions } from "@app/lib/reconstruct";
 import type { Asset, AssetKind, Course, ExcerptInput, Folder, Job, Note, NoteBlock, ReconstructionDocument, SourceAnchor } from "@app/types";
 
 interface WorkspaceContextValue {
@@ -29,7 +29,7 @@ interface WorkspaceContextValue {
   setNoteCursor: (noteId: string, index: number) => void;
   insertOcrBlocks: (noteId: string, blocks: NoteBlock[]) => void;
   resolveAnchor: (anchorId: string) => Promise<{ anchor: SourceAnchor; asset?: Asset } | undefined>;
-  startReconstruction: (asset: Asset, retryJob?: Job) => Promise<Job>;
+  startReconstruction: (asset: Asset, retryJob?: Job, options?: ReconstructOptions) => Promise<Job>;
   saveDocumentAsset: (courseId: string, name: string, blob: Blob, kind: AssetKind, textContent?: string, folderId?: string | null) => Promise<Asset>;
   setPreference: <T>(key: string, value: T) => Promise<void>;
   getPreference: <T>(key: string, fallback: T) => Promise<T>;
@@ -318,7 +318,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return { anchor, asset: asset?.status === "deleted" ? undefined : asset };
   }, []);
 
-  const startReconstruction = useCallback(async (asset: Asset, retryJob?: Job) => {
+  const startReconstruction = useCallback(async (asset: Asset, retryJob?: Job, options?: ReconstructOptions) => {
     const now = new Date().toISOString();
     const extractionVersion = Math.max(0, ...documents.filter((item) => item.assetId === asset.id).map((item) => item.extractionVersion)) + 1;
     const document: ReconstructionDocument = { id: `document-${asset.id}-${crypto.randomUUID()}`, assetId: asset.id, courseId: asset.courseId, extractionVersion, status: "processing", blocks: [], updatedAt: now };
@@ -336,7 +336,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     void (async () => {
       try {
         await updateJob({ status: "running", progress: 2 });
-        const result = await reconstructAsset(asset, (progress) => { void updateJob({ progress }); });
+        const result = await reconstructAsset(asset, (progress) => { void updateJob({ progress }); }, options);
         const ready = { ...document, status: "ready" as const, blocks: result.blocks, updatedAt: new Date().toISOString() };
         setDocuments((current) => current.map((item) => item.id === ready.id ? ready : item));
         await updateJob({ status: "succeeded", progress: 100 });

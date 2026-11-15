@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Download, FileText, FolderInput, LoaderCircle, Pencil, RefreshCw, Save, ScanText } from "lucide-react";
+import { Crop, Download, FileText, FolderInput, LoaderCircle, Pencil, RefreshCw, Save, ScanText } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import DocumentPreview from "@app/components/DocumentPreview";
@@ -7,10 +7,12 @@ import { markdownToBlocks } from "@app/lib/ai";
 import { blocksToMarkdown, buildDocxBlob, exportDocx, exportMarkdown } from "@app/lib/export";
 import { useWorkspace } from "@app/state/WorkspaceContext";
 import type { Asset, Note, NoteBlock } from "@app/types";
+import type { RegionBBox } from "@app/lib/reconstruct";
 
-export default function ConvertPanel({ asset, courseId, onExit }: { asset: Asset; courseId: string; onExit: () => void }) {
+export default function ConvertPanel({ asset, courseId, region, regionMode, onRegionModeChange }: { asset: Asset; courseId: string; region: RegionBBox | null; regionMode: boolean; onRegionModeChange: (value: boolean) => void }) {
   const { documents, jobs, startReconstruction, folders, saveDocumentAsset } = useWorkspace();
   const [format, setFormat] = useState<"markdown" | "docx">("markdown");
+  const [ignoreHeaderFooter, setIgnoreHeaderFooter] = useState(true);
   const [markdown, setMarkdown] = useState("");
   const [edited, setEdited] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -50,7 +52,7 @@ export default function ConvertPanel({ asset, courseId, onExit }: { asset: Asset
   const start = async () => {
     if (!asset) return;
     try {
-      await startReconstruction(asset);
+      await startReconstruction(asset, undefined, { region: region ?? undefined, ignoreHeaderFooter });
     } catch {
       toast.error("无法启动转换，请重试。");
     }
@@ -91,10 +93,14 @@ export default function ConvertPanel({ asset, courseId, onExit }: { asset: Asset
 
   return <div className="convert-panel">
     <div className="convert-panel-header">
-      <button className="back-link" onClick={onExit}><ArrowLeft size={15} />返回笔记</button>
       <div className="convert-panel-title"><ScanText size={16} /><span>转文字文档</span><small>{asset.name}</small></div>
       <select className="conversion-format-select" aria-label="目标格式" value={format} onChange={(event) => setFormat(event.target.value as "markdown" | "docx")}><option value="markdown">Markdown (.md)</option><option value="docx">Word (.docx)</option></select>
       {document?.status === "ready" && <button className="toolbar-button" onClick={() => void start()} disabled={processing}><RefreshCw size={15} />重新转换</button>}
+    </div>
+    <div className="convert-region-bar">
+      <button className={`toolbar-button ${regionMode ? "selected" : ""}`} onClick={() => onRegionModeChange(!regionMode)}><Crop size={15} />{regionMode ? "退出框选" : "框选区域"}</button>
+      <span className="convert-region-status">{region ? "已框选，将应用到全部页面" : regionMode ? "请在左侧拖拽框选" : "未框选，识别整页"}</span>
+      <label className="convert-hf-toggle"><input type="checkbox" checked={ignoreHeaderFooter} onChange={(event) => setIgnoreHeaderFooter(event.target.checked)} />忽略页眉页脚</label>
     </div>
     {processing && <div className="reconstruct-progress"><LoaderCircle size={19} className="spin" /><div><strong>正在生成文字文档…</strong><span>文字层直接提取，图片和扫描页进行中英文 OCR，同时保留原始页面。</span></div><span>{job?.progress ?? 0}%</span><i style={{ width: `${job?.progress ?? 0}%` }} /></div>}
     {document?.status === "failed" && <div className="reconstruct-failed"><strong>转换未完成</strong><span>{job?.errorMessage ?? "请重试。"}</span><button onClick={() => void start()}>重新转换</button></div>}

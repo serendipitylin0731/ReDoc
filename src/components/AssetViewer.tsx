@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AudioLines, Camera, ChevronRight, Crop, Download, Expand, File, FileArchive, FileImage, FileText, Play, ScanText, Table2, Video } from "lucide-react";
+import { AudioLines, Camera, ChevronRight, Download, Expand, File, FileArchive, FileImage, FileText, Play, ScanText, Table2, Video } from "lucide-react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { useNavigate } from "react-router-dom";
@@ -10,14 +10,13 @@ import { ocrImage, ocrTextToBlocks } from "@app/lib/reconstruct";
 import { useWorkspace } from "@app/state/WorkspaceContext";
 import type { Asset } from "@app/types";
 
-interface ViewerProps { asset: Asset; noteId: string; onNoteChange: (id: string) => void; showConvert?: boolean; onConvert?: () => void }
+interface ViewerProps { asset: Asset; noteId: string; onNoteChange: (id: string) => void; showConvert?: boolean; onConvert?: () => void; regionMode?: boolean; onRegionModeChange?: (value: boolean) => void; onRegion?: (bbox: BBox | null) => void }
 type BBox = [number, number, number, number];
 interface Region { x: number; y: number; width: number; height: number }
 
-function ImageViewer({ asset, noteId, onNoteChange }: ViewerProps) {
+function ImageViewer({ asset, noteId, onNoteChange, regionMode = false, onRegionModeChange, onRegion }: ViewerProps) {
   const { addExcerpt, insertOcrBlocks } = useWorkspace();
   const [url, setUrl] = useState("");
-  const [regionMode, setRegionMode] = useState(false);
   const [region, setRegion] = useState<Region | null>(null);
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -25,11 +24,18 @@ function ImageViewer({ asset, noteId, onNoteChange }: ViewerProps) {
   useEffect(() => { const value = URL.createObjectURL(asset.blob); setUrl(value); return () => URL.revokeObjectURL(value); }, [asset.blob]);
   const bounds = () => imageRef.current?.getBoundingClientRect();
   const point = (event: ReactPointerEvent) => { const box = bounds(); return { x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0) }; };
+  const report = (value: Region | null) => {
+    if (!value) { onRegion?.(null); return; }
+    const box = bounds();
+    if (box) onRegion?.([value.x / box.width, value.y / box.height, (value.x + value.width) / box.width, (value.y + value.height) / box.height]);
+  };
   const down = (event: ReactPointerEvent<HTMLDivElement>) => { if (!regionMode) return; event.currentTarget.setPointerCapture(event.pointerId); const value = point(event); start.current = value; setRegion({ ...value, width: 0, height: 0 }); };
   const move = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!start.current || !regionMode) return;
     const value = point(event);
-    setRegion({ x: Math.min(start.current.x, value.x), y: Math.min(start.current.y, value.y), width: Math.abs(value.x - start.current.x), height: Math.abs(value.y - start.current.y) });
+    const next = { x: Math.min(start.current.x, value.x), y: Math.min(start.current.y, value.y), width: Math.abs(value.x - start.current.x), height: Math.abs(value.y - start.current.y) };
+    setRegion(next);
+    report(next);
   };
   const capture = async (withOcr: boolean) => {
     const image = imageRef.current;
@@ -56,7 +62,8 @@ function ImageViewer({ asset, noteId, onNoteChange }: ViewerProps) {
       } finally {
         setOcrProgress(null);
         setRegion(null);
-        setRegionMode(false);
+        report(null);
+        onRegionModeChange?.(false);
       }
       return;
     }
@@ -64,10 +71,11 @@ function ImageViewer({ asset, noteId, onNoteChange }: ViewerProps) {
     const id = await addExcerpt({ asset, noteId, kind: "image_region", page: 1, bbox, imageDataUrl });
     onNoteChange(id);
     setRegion(null);
-    setRegionMode(false);
+    report(null);
+    onRegionModeChange?.(false);
   };
   return <>
-    <div className="image-viewer-toolbar"><span><FileImage size={15} />原始图像 · 缩放不会改变来源坐标</span><button className={`toolbar-button ${regionMode ? "selected" : ""}`} onClick={() => { setRegionMode((value) => !value); setRegion(null); }}><Crop size={15} />{regionMode ? "退出框选" : "框选摘录"}</button></div>
+    <div className="image-viewer-toolbar"><span><FileImage size={15} />原始图像 · 缩放不会改变来源坐标</span>{regionMode && <span className="region-hint">在图片上拖拽框选</span>}</div>
     <div className={`image-stage ${regionMode ? "region-active" : ""}`}><div className="image-capture-wrap">
       {url && <img ref={imageRef} src={url} alt={asset.name} draggable={false} />}
       {regionMode && <div className="page-interaction-layer" onPointerDown={down} onPointerMove={move} onPointerUp={() => { start.current = null; }} />}
