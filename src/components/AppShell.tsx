@@ -14,5 +14,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
       <Link to="/settings" className="icon-button" title="设置" aria-label="设置"><Settings size={19} /></Link>
     </header>
     <main className="app-main">{children}</main>
+    <footer className="app-footer" aria-hidden="true">
+      <span>serendipity_lin@sjtu.edu.cn</span>
+      <span>Made with Qoder</span>
+    </footer>
   </div>;
 }

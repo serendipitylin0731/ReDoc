@@ -14,7 +14,7 @@ interface WorkspaceContextValue {
   jobs: Job[];
   documents: ReconstructionDocument[];
   saveStates: Record<string, "saving" | "saved" | "conflict">;
-  createCourse: (title: string, description: string) => Promise<Course>;
+  createCourse: (title: string, description: string, extra?: Partial<Pick<Course, "icon" | "color" | "pinned">>) => Promise<Course>;
   updateCourse: (course: Course) => Promise<void>;
   createFolder: (courseId: string, name: string) => Promise<void>;
   uploadFiles: (courseId: string, files: File[], folderId?: string | null) => Promise<Asset[]>;
@@ -131,9 +131,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, [refresh]);
 
-  const createCourse = useCallback(async (title: string, description: string) => {
+  const createCourse = useCallback(async (title: string, description: string, extra: Partial<Pick<Course, "icon" | "color" | "pinned">> = {}) => {
     const now = new Date().toISOString();
-    const course: Course = { id: crypto.randomUUID(), title: title.trim(), description: description.trim(), color: ["#52715f", "#a96850", "#46767a", "#76658d"][courses.length % 4], archived: false, createdAt: now, updatedAt: now };
+    const course: Course = {
+      id: crypto.randomUUID(), title: title.trim(), description: description.trim(),
+      color: extra.color ?? ["#52715f", "#a96850", "#46767a", "#76658d"][courses.length % 4],
+      icon: extra.icon ?? "📘", pinned: extra.pinned ?? false, pinnedAt: extra.pinned ? now : null,
+      archived: false, createdAt: now, updatedAt: now,
+    };
     await putRecord("courses", course);
     setCourses((current) => [...current, course]);
     return course;

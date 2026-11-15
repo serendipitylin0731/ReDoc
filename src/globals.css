@@ -1741,3 +1741,26 @@ body::after { right: -140px; bottom: -160px; width: 500px; height: 500px; backgr
   .field-label > span { color: #94a3b8; }
   .field-label input, .field-label textarea, .field-label select { border-color: #243252; background: #0f172a; color: #e2e8f0; }
 }
+
+/* ===== 页脚署名 / 课程图标颜色与置顶 ===== */
+.app-footer { position: fixed; left: 0; right: 0; bottom: 10px; z-index: 70; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; pointer-events: none; }
+.app-footer span { font-size: 11px; color: #94a3b8; letter-spacing: .2px; }
+.course-meta-field { display: flex; flex-direction: column; gap: 8px; }
+.course-meta-field > span { color: #64748b; font-size: 11px; font-weight: 600; }
+.course-icon-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.course-icon-picker button { display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid #dce3ec; border-radius: 8px; background: #fff; font-size: 19px; }
+.course-icon-picker button.active { border-color: #2563eb; background: #eaf1ff; }
+.course-color-picker { display: flex; flex-wrap: wrap; gap: 7px; }
+.course-color-picker button { width: 26px; height: 26px; border: 2px solid transparent; border-radius: 50%; box-shadow: 0 0 0 1px #dce3ec inset; }
+.course-color-picker button.active { border-color: #fff; box-shadow: 0 0 0 2px #2563eb; }
+.course-pin-toggle { display: flex; align-items: center; gap: 8px; color: #334155; font-size: 12px; cursor: pointer; }
+.course-pin-toggle input { accent-color: #2563eb; }
+.course-cover-emoji { font-size: 48px; line-height: 1; filter: drop-shadow(0 4px 10px #00000030); }
+.course-card-footer > span { display: inline-flex; align-items: center; gap: 4px; }
+@media (prefers-color-scheme: dark) {
+  .app-footer span { color: #64748b; }
+  .course-icon-picker button { border-color: #243252; background: #0f172a; }
+  .course-icon-picker button.active { border-color: #2563eb; background: #16233c; }
+  .course-color-picker button { box-shadow: 0 0 0 1px #243252 inset; }
+  .course-meta-field > span, .course-pin-toggle { color: #cbd5e1; }
+}

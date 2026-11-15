@@ -7,6 +7,9 @@ export interface Course {
   title: string;
   description: string;
   color: string;
+  icon: string;
+  pinned: boolean;
+  pinnedAt: string | null;
   archived: boolean;
   createdAt: string;
   updatedAt: string;
