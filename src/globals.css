@@ -2492,3 +2492,12 @@ html.dark .pdf-export-toolbar > span { color: #cbd5e1; }
 html.dark .section-icon-button { color: #64748b; }
 html.dark .section-icon-button:hover { background: #16233c; color: #93b4f8; }
 
+/* ===== 顶部栏课程上下文 ===== */
+.header-course-back { display: inline-flex; align-items: center; gap: 5px; margin-left: 6px; padding: 0; background: transparent; color: #64748b; font-size: 12px; }
+.header-course-back:hover { color: #1d4ed8; }
+.header-course-title { max-width: 320px; overflow: hidden; color: #172033; font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.course-workspace-header-actions { display: flex; flex: 1; justify-content: flex-end; }
+html.dark .header-course-back { color: #94a3b8; }
+html.dark .header-course-back:hover { color: #93b4f8; }
+html.dark .header-course-title { color: #e2e8f0; }
+

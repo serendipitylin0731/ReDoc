@@ -4,6 +4,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import JSZip from "jszip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import AssetViewer from "@app/components/AssetViewer";
+import { HeaderContent } from "@app/components/AppShell";
 import ConvertPanel from "@app/components/ConvertPanel";
 import NoteEditor from "@app/components/NoteEditor";
 import PdfExportPanel from "@app/components/PdfExportPanel";
@@ -144,10 +145,11 @@ export default function WorkspacePage() {
   const filteredFolders = courseFolders.filter((folder) => courseAssets.some((asset) => asset.folderId === folder.id && matches(asset)));
 
   return <div className="workspace-page course-page">
+    <HeaderContent><button className="header-course-back" onClick={() => navigate("/courses")}><ArrowLeft size={15} />课程</button><span className="header-course-title">{course.title}</span></HeaderContent>
     <header className="course-workspace-header">
-      <button className="back-link" onClick={() => navigate("/courses")}><ArrowLeft size={15} />课程</button>
-      <h1>{course.title}</h1>
-      <button className="toolbar-button" onClick={() => void downloadCourseZip()} title="下载整个课程为压缩包"><Download size={15} />打包下载</button>
+      <div className="course-workspace-header-actions">
+        <button className="toolbar-button" onClick={() => void downloadCourseZip()} title="下载整个课程为压缩包"><Download size={15} />打包下载</button>
+      </div>
     </header>
     <div className="workspace-body">
       <aside className="file-sidebar">
