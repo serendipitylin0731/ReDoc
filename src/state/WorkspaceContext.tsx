@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { deleteRecord, detectAssetKind, getAll, getDb, getRecord, putRecord, saveNote, sha256, sourceLabel } from "@app/lib/db";
+import { deleteRecord, detectAssetKind, getAll, getDb, getRecord, putRecord, saveNote, sha256 } from "@app/lib/db";
 import { reconstructAsset } from "@app/lib/reconstruct";
-import type { Asset, Course, ExcerptInput, Folder, Job, Note, NoteBlock, ReconstructionDocument, SourceAnchor } from "@app/types";
+import type { Asset, AssetKind, Course, ExcerptInput, Folder, Job, Note, NoteBlock, ReconstructionDocument, SourceAnchor } from "@app/types";
 
 interface WorkspaceContextValue {
   loading: boolean;
@@ -30,6 +30,7 @@ interface WorkspaceContextValue {
   insertOcrBlocks: (noteId: string, blocks: NoteBlock[]) => void;
   resolveAnchor: (anchorId: string) => Promise<{ anchor: SourceAnchor; asset?: Asset } | undefined>;
   startReconstruction: (asset: Asset, retryJob?: Job) => Promise<Job>;
+  saveDocumentAsset: (courseId: string, name: string, blob: Blob, kind: AssetKind, textContent?: string, folderId?: string | null) => Promise<Asset>;
   setPreference: <T>(key: string, value: T) => Promise<void>;
   getPreference: <T>(key: string, fallback: T) => Promise<T>;
   refresh: () => Promise<void>;
@@ -193,6 +194,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     toast.success("资料已移出课程，既有笔记与内容快照仍保留");
   }, []);
 
+  const saveDocumentAsset = useCallback(async (courseId: string, name: string, blob: Blob, kind: AssetKind, textContent?: string, folderId: string | null = null) => {
+    const asset: Asset = {
+      id: crypto.randomUUID(), courseId, folderId, name, mime: blob.type || "application/octet-stream", size: blob.size,
+      sha256: "", kind, status: "ready", version: 1, createdAt: new Date().toISOString(), blob, textContent,
+    };
+    await putRecord("assets", asset);
+    setAssets((current) => [...current, asset]);
+    toast.success("文档已保存到课程文件");
+    return asset;
+  }, []);
+
   const createNote = useCallback(async (courseId: string, title = "未命名笔记") => {
     const now = new Date().toISOString();
     const note: Note = { id: crypto.randomUUID(), courseId, folderId: null, title, favorite: false, tags: [], version: 0, createdAt: now, updatedAt: now, blocks: [{ id: crypto.randomUUID(), type: "paragraph", text: "" }] };
@@ -273,20 +285,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const addExcerpt = useCallback(async (input: ExcerptInput) => {
     let target = notesRef.current.find((note) => note.id === input.noteId);
     if (input.createNew || !target) target = await createNote(input.asset.courseId, `${input.asset.name.replace(/\.[^.]+$/, "")} · 摘录`);
-    const anchor: SourceAnchor = {
-      id: crypto.randomUUID(), assetId: input.asset.id, assetVersion: input.asset.version, kind: input.kind,
-      page: input.page, bbox: input.bbox, textQuote: input.text, textRange: input.textRange, startMs: input.startMs, endMs: input.endMs,
-      imageDataUrl: input.imageDataUrl, createdAt: new Date().toISOString(),
-    };
-    await putRecord("anchors", anchor);
-    setAnchors((current) => [...current, anchor]);
-    const label = sourceLabel(anchor, input.asset.name);
-    const block: NoteBlock = {
-      id: crypto.randomUUID(), type: "excerpt", text: input.text ?? "", src: input.imageDataUrl, sourceAnchorId: anchor.id,
-      sourceSnapshot: { assetName: input.asset.name, label, text: input.text, imageDataUrl: input.imageDataUrl },
-    };
+    const block: NoteBlock = input.imageDataUrl
+      ? { id: crypto.randomUUID(), type: "image", text: input.text ?? "资料截图", src: input.imageDataUrl }
+      : { id: crypto.randomUUID(), type: "paragraph", text: input.text ?? "" };
     updateNote({ ...target, blocks: [...target.blocks, block] }, true);
-    toast.success(input.createNew ? "已创建笔记并加入摘录" : "已加入 Note，来源已保存");
+    toast.success(input.createNew ? "已创建笔记并加入内容" : "已加入 Note");
     return target.id;
   }, [createNote, updateNote]);
 
@@ -355,7 +358,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const value: WorkspaceContextValue = {
     loading, courses, folders, assets, notes, anchors, jobs, documents, saveStates, noteCursor,
     createCourse, updateCourse, createFolder, uploadFiles, renameAsset, moveAssetToFolder, deleteAsset, createNote, updateNote, removeNote,
-    addExcerpt, setNoteCursor, insertOcrBlocks, resolveAnchor, startReconstruction, setPreference, getPreference, refresh,
+    addExcerpt, setNoteCursor, insertOcrBlocks, resolveAnchor, startReconstruction, saveDocumentAsset, setPreference, getPreference, refresh,
   };
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

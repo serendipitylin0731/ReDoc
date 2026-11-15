@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
-import { ArrowDown, ArrowUp, Bold, Braces, Check, ChevronDown, ChevronRight, Code2, FileImage, GripVertical, Heading2, Italic, Link2, List, ListOrdered, LoaderCircle, MoreHorizontal, Pilcrow, Plus, Quote, Redo2, Replace, Search, Sigma, Sparkles, Table2, Trash2, Undo2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bold, Check, ChevronDown, Code2, FileImage, GripVertical, Heading2, Italic, List, ListOrdered, LoaderCircle, MoreHorizontal, Pilcrow, Plus, Quote, Redo2, Replace, Search, Sigma, Sparkles, Table2, Trash2, Undo2, X } from "lucide-react";
 import DOMPurify from "dompurify";
 import katex from "katex";
 import { marked } from "marked";
@@ -37,19 +37,9 @@ function TableBlock({ block, onChange }: { block: NoteBlock; onChange: (rows: st
   return <div className="editor-table-wrap"><table className="editor-table"><tbody>{rows.map((cells, rowIndex) => <tr key={rowIndex}>{cells.map((cell, columnIndex) => <td key={columnIndex}><input aria-label={`表格 ${rowIndex + 1} 行 ${columnIndex + 1} 列`} className={rowIndex === 0 ? "table-heading-cell" : ""} value={cell} onChange={(event) => update(rowIndex, columnIndex, event.target.value)} /></td>)}</tr>)}</tbody></table><div className="table-actions"><button onClick={() => onChange([...rows, rows[0].map(() => "")])}>+ 添加行</button><button onClick={() => onChange(rows.map((cells) => [...cells, ""]))}>+ 添加列</button></div></div>;
 }
 
-function SourceExcerpt({ block, onChange, onResolve }: { block: NoteBlock; onChange: (html: string) => void; onResolve: () => void }) {
-  const [expanded, setExpanded] = useState(true);
-  return <div className="source-excerpt">
-    <div className="excerpt-topline"><span><Link2 size={13} />资料摘录</span><button className="source-expand" onClick={() => setExpanded((value) => !value)}>{expanded ? "收起" : "展开"}<ChevronDown size={13} className={expanded ? "" : "rotate-closed"} /></button></div>
-    {block.src && <img className="excerpt-image" src={block.src} alt={block.text || "资料区域截图"} />}
-    {(expanded || !block.src) && <EditableText block={block} onChange={onChange} onEnter={() => undefined} onEmpty={() => undefined} />}
-    <button className="source-reference" onClick={onResolve} title="回到原始资料位置"><span className="source-reference-icon"><Braces size={14} /></span><span>{block.sourceSnapshot?.label ?? "来源不可定位"}</span><ChevronRight size={14} /></button>
-  </div>;
-}
-
 const blockNames: Record<BlockType, string> = { heading1: "一级标题", heading2: "二级标题", heading3: "三级标题", paragraph: "正文", bullet: "项目列表", numbered: "编号列表", quote: "引用", code: "代码块", math: "公式", table: "表格", image: "图片", excerpt: "资料摘录" };
 
-export default function NoteEditor({ note, onResolveSource }: { note: Note; onResolveSource: (anchorId: string) => void }) {
+export default function NoteEditor({ note }: { note: Note }) {
   const { updateNote, saveStates, anchors, getPreference, setNoteCursor } = useWorkspace();
   const past = useRef<Note[]>([]);
   const future = useRef<Note[]>([]);
@@ -145,7 +135,6 @@ export default function NoteEditor({ note, onResolveSource }: { note: Note; onRe
   };
   const format = (command: "bold" | "italic") => document.execCommand(command);
   const words = note.blocks.reduce((total, block) => total + (block.text.replace(/<[^>]+>/g, "").length), 0);
-  const sources = note.blocks.filter((block) => block.sourceAnchorId).length;
 
   return <div className="note-editor">
     <div className="note-editor-topbar"><div className={`save-indicator ${saveState}`}>{saveState === "saving" ? <LoaderCircle size={14} className="spin" /> : saveState === "conflict" ? <X size={14} /> : <Check size={14} />}<span>{saveState === "saving" ? "正在保存" : saveState === "conflict" ? "版本冲突" : "所有更改已保存"}</span></div><div className="note-top-actions"><button className={`toolbar-button ${searchOpen ? "selected" : ""}`} onClick={() => setSearchOpen((value) => !value)} title="查找替换"><Search size={15} /><span>查找</span></button><button className="ai-organize-button" onClick={openAi}><Sparkles size={15} />AI 整理<span>预览</span></button></div></div>
@@ -164,13 +153,13 @@ export default function NoteEditor({ note, onResolveSource }: { note: Note; onRe
       <div className="note-blocks">{note.blocks.map((block, index) => <div className={`note-block note-block-${block.type}`} data-block-id={block.id} key={block.id} onFocusCapture={() => setNoteCursor(note.id, index)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropBlock(event, block.id)}>
         <div className="block-grip" draggable onDragStart={(event) => { event.dataTransfer.setData("text/redoc-block", block.id); event.dataTransfer.effectAllowed = "move"; }} title="拖动排序"><GripVertical size={15} /></div>
         {block.type === "bullet" && <span className="list-marker">•</span>}{block.type === "numbered" && <span className="numbered-marker">{note.blocks.slice(0, index + 1).filter((item) => item.type === "numbered").length}.</span>}
-        <div className="block-content">{block.type === "math" ? <MathBlock block={block} onChange={(text) => patchBlock(block.id, { text })} /> : block.type === "table" ? <TableBlock block={block} onChange={(rows) => patchBlock(block.id, { rows })} /> : block.type === "excerpt" ? <SourceExcerpt block={block} onChange={(text) => patchBlock(block.id, { text })} onResolve={() => block.sourceAnchorId ? onResolveSource(block.sourceAnchorId) : undefined} /> : block.type === "image" ? <div className="note-image-block">{block.src && <img src={block.src} alt={block.text} />}<EditableText block={block} onChange={(text) => patchBlock(block.id, { text })} onEnter={() => addBlock("paragraph", block.id)} onEmpty={() => deleteBlock(block.id)} /></div> : <EditableText block={block} onChange={(text) => patchBlock(block.id, { text })} onEnter={() => addBlock("paragraph", block.id)} onEmpty={() => deleteBlock(block.id)} />}</div>
+        <div className="block-content">{block.type === "math" ? <MathBlock block={block} onChange={(text) => patchBlock(block.id, { text })} /> : block.type === "table" ? <TableBlock block={block} onChange={(rows) => patchBlock(block.id, { rows })} /> : block.type === "image" ? <div className="note-image-block">{block.src && <img src={block.src} alt={block.text} />}<EditableText block={block} onChange={(text) => patchBlock(block.id, { text })} onEnter={() => addBlock("paragraph", block.id)} onEmpty={() => deleteBlock(block.id)} /></div> : <EditableText block={block} onChange={(text) => patchBlock(block.id, { text })} onEnter={() => addBlock("paragraph", block.id)} onEmpty={() => deleteBlock(block.id)} />}</div>
         <div className="block-actions"><DropdownMenu><DropdownMenuTrigger asChild><button className="icon-button" aria-label="块操作"><MoreHorizontal size={15} /></button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => moveBlock(block.id, -1)}><ArrowUp size={14} />上移</DropdownMenuItem><DropdownMenuItem onSelect={() => moveBlock(block.id, 1)}><ArrowDown size={14} />下移</DropdownMenuItem><DropdownMenuItem onSelect={() => addBlock("paragraph", block.id)}><Plus size={14} />在下方插入</DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={() => deleteBlock(block.id)}><Trash2 size={14} />删除块</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
       </div>)}</div>
       <button className="add-block-hint" onClick={() => addBlock("paragraph")}><Plus size={15} />添加一个内容块</button>
       <div className="note-endmark"><span>END OF NOTE</span><i /></div>
     </div></div>
-    <div className="note-statusbar"><span>{words} 字符 · {note.blocks.length} 个内容块</span><span><Link2 size={12} />{sources} 条可追溯来源</span><span>本地自动保存 · v{note.version}</span></div>
+    <div className="note-statusbar"><span>{words} 字符 · {note.blocks.length} 个内容块</span><span>本地自动保存 · v{note.version}</span></div>
     <Dialog open={aiOpen} onOpenChange={setAiOpen}><DialogContent className="ai-dialog"><DialogHeader><DialogTitle><Sparkles size={19} />AI 整理预览</DialogTitle><DialogDescription>只整理现有笔记，不添加无法验证的事实。确认后以新章节插入，原始内容与来源保持不变。</DialogDescription></DialogHeader>{!aiLoading && !aiResult && !aiError && <div className="ai-consent"><Sparkles size={25} /><strong>发送前确认</strong><p>继续后，当前 Note 的标题、正文和来源标签会发送给 DeepSeek；原始 PDF、图片和音视频不会上传。</p><button className="primary-button" onClick={() => void runAi()}>确认发送并生成预览</button><small>云端 AI 默认关闭，可在偏好设置中更改。</small></div>}{aiLoading && <div className="ai-loading"><LoaderCircle size={26} className="spin" /><strong>正在梳理主题与来源…</strong><span>通常需要几秒，当前笔记仍可继续编辑。</span></div>}{aiError && <div className="ai-error"><strong>这次没有生成整理稿</strong><p>{aiError}</p><button className="toolbar-button" onClick={() => void runAi()}>重新尝试</button></div>}{aiResult && <div className="ai-result"><div className="ai-result-meta"><span>{aiResult.model}</span><span>原 {note.blocks.length} 块将全部保留</span></div><h3>{aiResult.title}</h3><article className="markdown-document" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(aiResult.markdown) as string) }} /></div>}<DialogFooter><button className="toolbar-button" onClick={() => setAiOpen(false)}>取消</button><button className="primary-button" disabled={!aiResult || aiLoading} onClick={applyAi}><Check size={15} />确认插入整理提纲</button></DialogFooter></DialogContent></Dialog>
   </div>;
 }

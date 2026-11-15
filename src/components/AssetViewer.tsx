@@ -8,23 +8,21 @@ import PdfViewer from "@app/components/PdfViewer";
 import { downloadOriginal } from "@app/lib/export";
 import { ocrImage, ocrTextToBlocks } from "@app/lib/reconstruct";
 import { useWorkspace } from "@app/state/WorkspaceContext";
-import type { Asset, SourceAnchor } from "@app/types";
+import type { Asset } from "@app/types";
 
-interface ViewerProps { asset: Asset; noteId: string; onNoteChange: (id: string) => void; focusAnchor?: SourceAnchor | null; showConvert?: boolean }
+interface ViewerProps { asset: Asset; noteId: string; onNoteChange: (id: string) => void; showConvert?: boolean; onConvert?: () => void }
 type BBox = [number, number, number, number];
 interface Region { x: number; y: number; width: number; height: number }
 
-function ImageViewer({ asset, noteId, onNoteChange, focusAnchor }: ViewerProps) {
+function ImageViewer({ asset, noteId, onNoteChange }: ViewerProps) {
   const { addExcerpt, insertOcrBlocks } = useWorkspace();
   const [url, setUrl] = useState("");
   const [regionMode, setRegionMode] = useState(false);
   const [region, setRegion] = useState<Region | null>(null);
-  const [highlight, setHighlight] = useState<BBox | null>(focusAnchor?.bbox ?? null);
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => { const value = URL.createObjectURL(asset.blob); setUrl(value); return () => URL.revokeObjectURL(value); }, [asset.blob]);
-  useEffect(() => { setHighlight(focusAnchor?.bbox ?? null); }, [focusAnchor]);
   const bounds = () => imageRef.current?.getBoundingClientRect();
   const point = (event: ReactPointerEvent) => { const box = bounds(); return { x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0) }; };
   const down = (event: ReactPointerEvent<HTMLDivElement>) => { if (!regionMode) return; event.currentTarget.setPointerCapture(event.pointerId); const value = point(event); start.current = value; setRegion({ ...value, width: 0, height: 0 }); };
@@ -59,14 +57,12 @@ function ImageViewer({ asset, noteId, onNoteChange, focusAnchor }: ViewerProps) 
         setOcrProgress(null);
         setRegion(null);
         setRegionMode(false);
-        setHighlight(null);
       }
       return;
     }
     const bbox: BBox = [region.x / box.width, region.y / box.height, (region.x + region.width) / box.width, (region.y + region.height) / box.height];
     const id = await addExcerpt({ asset, noteId, kind: "image_region", page: 1, bbox, imageDataUrl });
     onNoteChange(id);
-    setHighlight(bbox);
     setRegion(null);
     setRegionMode(false);
   };
@@ -74,7 +70,6 @@ function ImageViewer({ asset, noteId, onNoteChange, focusAnchor }: ViewerProps) 
     <div className="image-viewer-toolbar"><span><FileImage size={15} />原始图像 · 缩放不会改变来源坐标</span><button className={`toolbar-button ${regionMode ? "selected" : ""}`} onClick={() => { setRegionMode((value) => !value); setRegion(null); }}><Crop size={15} />{regionMode ? "退出框选" : "框选摘录"}</button></div>
     <div className={`image-stage ${regionMode ? "region-active" : ""}`}><div className="image-capture-wrap">
       {url && <img ref={imageRef} src={url} alt={asset.name} draggable={false} />}
-      {highlight && <div className="source-highlight" style={{ left: `${highlight[0] * 100}%`, top: `${highlight[1] * 100}%`, width: `${(highlight[2] - highlight[0]) * 100}%`, height: `${(highlight[3] - highlight[1]) * 100}%` }} />}
       {regionMode && <div className="page-interaction-layer" onPointerDown={down} onPointerMove={move} onPointerUp={() => { start.current = null; }} />}
       {region && <div className="region-selection" style={{ left: region.x, top: region.y, width: region.width, height: region.height }} />}
     </div></div>
@@ -82,7 +77,7 @@ function ImageViewer({ asset, noteId, onNoteChange, focusAnchor }: ViewerProps) 
   </>;
 }
 
-function TextViewer({ asset, noteId, focusAnchor }: ViewerProps) {
+function TextViewer({ asset, noteId }: ViewerProps) {
   const { addExcerpt } = useWorkspace();
   const [text, setText] = useState(asset.textContent ?? "");
   const [selection, setSelection] = useState<{ text: string; top: number; left: number } | null>(null);
@@ -106,18 +101,16 @@ function TextViewer({ asset, noteId, focusAnchor }: ViewerProps) {
   };
   const rows = asset.kind === "csv" ? text.split(/\r?\n/).slice(0, 100).map((line) => line.split(",")) : [];
   return <div className="text-document-stage" ref={containerRef}>
-    {focusAnchor?.textQuote && <div className="text-source-callout"><ScanText size={16} /><div><strong>来源原文</strong><p>{focusAnchor.textQuote}</p></div></div>}
     {asset.kind === "markdown" ? <article className="markdown-document" onMouseUp={selectText} dangerouslySetInnerHTML={{ __html: html }} /> : asset.kind === "csv" ? <div className="csv-table-wrap"><table><tbody>{rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => index === 0 ? <th key={cellIndex}>{cell}</th> : <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table>{text.split(/\r?\n/).length > 100 && <p>仅预览前 100 行，完整内容请下载原文件。</p>}</div> : <pre className="plain-document" onMouseUp={selectText}>{text}</pre>}
     {selection && <div className="selection-toolbar text-selection-toolbar" style={{ top: selection.top, left: selection.left }}><button onClick={() => void add()}>加入当前 Note</button></div>}
   </div>;
 }
 
-function VideoViewer({ asset, noteId, focusAnchor }: ViewerProps) {
+function VideoViewer({ asset, noteId }: ViewerProps) {
   const { addExcerpt } = useWorkspace();
   const [url, setUrl] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => { const value = URL.createObjectURL(asset.blob); setUrl(value); return () => URL.revokeObjectURL(value); }, [asset.blob]);
-  useEffect(() => { if (focusAnchor?.startMs !== undefined && videoRef.current) videoRef.current.currentTime = focusAnchor.startMs / 1000; }, [focusAnchor]);
   const capture = async () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) { toast.info("请先播放视频，再暂停到要摘录的画面"); return; }
@@ -147,13 +140,14 @@ function UnsupportedViewer({ asset }: { asset: Asset }) {
 }
 
 export default function AssetViewer(props: ViewerProps) {
-  const { asset, showConvert = true } = props;
+  const { asset, showConvert = true, onConvert } = props;
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const canReconstruct = ["pdf", "image", "markdown", "text"].includes(asset.kind);
+  const openConvert = () => { if (onConvert) onConvert(); else navigate(`/courses/${asset.courseId}/convert?file=${asset.id}`); };
   const KindIcon = asset.kind === "pdf" || asset.kind === "markdown" || asset.kind === "text" ? FileText : asset.kind === "image" ? FileImage : asset.kind === "video" ? Video : asset.kind === "audio" ? AudioLines : asset.kind === "csv" ? Table2 : FileArchive;
   return <div className="asset-viewer" ref={containerRef}>
-    <div className="asset-viewer-header"><div className="asset-heading"><span className="asset-kind-icon"><KindIcon size={18} /></span><div><strong>{asset.name}</strong><span>原始资料 · v{asset.version} · {(asset.size / 1024).toFixed(1)} KB</span></div></div><div className="asset-header-actions">{showConvert && canReconstruct && <button className="toolbar-button reconstruct-button" onClick={() => navigate(`/courses/${asset.courseId}/convert?file=${asset.id}`)}><ScanText size={15} /><span>转文字文档</span><ChevronRight size={13} /></button>}<button className="icon-button" onClick={() => downloadOriginal(asset)} title="下载原件" aria-label="下载原件"><Download size={16} /></button><button className="icon-button" onClick={() => void containerRef.current?.requestFullscreen()} title="全屏查看" aria-label="全屏查看"><Expand size={16} /></button></div></div>
+    <div className="asset-viewer-header"><div className="asset-heading"><span className="asset-kind-icon"><KindIcon size={18} /></span><div><strong>{asset.name}</strong><span>原始资料 · v{asset.version} · {(asset.size / 1024).toFixed(1)} KB</span></div></div><div className="asset-header-actions">{showConvert && canReconstruct && <button className="toolbar-button reconstruct-button" onClick={openConvert}><ScanText size={15} /><span>转文字文档</span><ChevronRight size={13} /></button>}<button className="icon-button" onClick={() => downloadOriginal(asset)} title="下载原件" aria-label="下载原件"><Download size={16} /></button><button className="icon-button" onClick={() => void containerRef.current?.requestFullscreen()} title="全屏查看" aria-label="全屏查看"><Expand size={16} /></button></div></div>
     <div className="asset-viewer-content">{asset.kind === "pdf" ? <PdfViewer {...props} /> : asset.kind === "image" ? <ImageViewer {...props} /> : ["markdown", "text", "csv"].includes(asset.kind) ? <TextViewer {...props} /> : asset.kind === "video" ? <VideoViewer {...props} /> : asset.kind === "audio" ? <AudioViewer asset={asset} /> : <UnsupportedViewer asset={asset} />}</div>
   </div>;
 }

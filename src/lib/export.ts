@@ -148,7 +148,7 @@ async function docxImage(dataUrl: string) {
   return { type: imageMime(dataUrl) === "image/jpeg" ? "jpg" as const : "png" as const, data: dataUrlBytes(dataUrl) };
 }
 
-export async function exportDocx(note: Note, includeSources: boolean) {
+export async function buildDocxBlob(note: Pick<Note, "title" | "blocks">): Promise<Blob> {
   const children: (Paragraph | Table)[] = [new Paragraph({ text: note.title, heading: HeadingLevel.TITLE }), new Paragraph({ children: [new TextRun({ text: `导出自 ReDoc · ${new Date().toLocaleString("zh-CN")}`, color: "7A8178", size: 18 })] })];
   let listIndex = 0;
   for (const block of note.blocks) {
@@ -173,12 +173,16 @@ export async function exportDocx(note: Note, includeSources: boolean) {
         children.push(new Paragraph({ text: `[图片无法嵌入：${block.id}]` }));
       }
     }
-    if (includeSources && block.sourceSnapshot) children.push(new Paragraph({ children: [new TextRun({ text: `来源：${block.sourceSnapshot.label}`, size: 18, color: "68766B", italics: true })], spacing: { after: 180 } }));
   }
-  const doc = new Document({ creator: "ReDoc", title: note.title, description: "带有可追溯来源的课程笔记", sections: [{ properties: {}, children }] });
+  const doc = new Document({ creator: "ReDoc", title: note.title, description: "课程笔记", sections: [{ properties: {}, children }] });
   const blob = await Packer.toBlob(doc);
   if (blob.size < 1000) throw new Error("Word 文件生成失败");
-  saveBlob(blob, `${safeName(note.title)}.docx`);
+  return blob;
+}
+
+export async function exportDocx(note: Note, includeSources: boolean) {
+  void includeSources;
+  saveBlob(await buildDocxBlob(note), `${safeName(note.title)}.docx`);
 }
 
 export function downloadOriginal(asset: Asset) {

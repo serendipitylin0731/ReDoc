@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Check, ChevronLeft, ChevronRight, Clipboard, Crop, FilePlus2, Highlighter, LoaderCircle, Minus, Plus, ScanText, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clipboard, Crop, FilePlus2, LoaderCircle, Minus, Plus, ScanText, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import * as pdfjs from "pdfjs-dist";
 import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useWorkspace } from "@app/state/WorkspaceContext";
 import { ocrImage, ocrTextToBlocks } from "@app/lib/reconstruct";
-import type { Asset, NoteBlock, SourceAnchor } from "@app/types";
+import type { Asset, NoteBlock } from "@app/types";
 
 pdfjs.GlobalWorkerOptions.workerPort = new PdfWorker();
 
@@ -23,27 +23,21 @@ interface PdfPageProps {
   asset: Asset;
   noteId: string;
   onNoteChange: (id: string) => void;
-  focusAnchor?: SourceAnchor | null;
   regionMode: boolean;
   onExitRegion: () => void;
   insertBlocks: (blocks: NoteBlock[]) => void;
   addScreenshot: (imageDataUrl: string, bbox: BBox) => void;
 }
 
-function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNoteChange, focusAnchor, regionMode, onExitRegion, insertBlocks, addScreenshot }: PdfPageProps) {
+function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNoteChange, regionMode, onExitRegion, insertBlocks, addScreenshot }: PdfPageProps) {
   const { addExcerpt } = useWorkspace();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const [region, setRegion] = useState<Region | null>(null);
   const [selection, setSelection] = useState<TextSelection | null>(null);
-  const [highlight, setHighlight] = useState<BBox | null>(focusAnchor?.page === pageNumber ? focusAnchor.bbox ?? null : null);
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const startPoint = useRef<{ x: number; y: number } | null>(null);
-
-  useEffect(() => {
-    if (focusAnchor?.page === pageNumber) setHighlight(focusAnchor.bbox ?? null);
-  }, [focusAnchor, pageNumber]);
 
   useEffect(() => {
     if (!pdf || !canvasRef.current || !textLayerRef.current) return;
@@ -134,7 +128,6 @@ function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNo
     if (!selection) return;
     const targetId = await addExcerpt({ asset, noteId, createNew, kind: "pdf_text", text: selection.text, page: pageNumber, bbox: selection.bbox });
     if (createNew) onNoteChange(targetId);
-    setHighlight(selection.bbox);
     setSelection(null);
     window.getSelection()?.removeAllRanges();
   };
@@ -165,28 +158,25 @@ function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNo
       } finally {
         setOcrProgress(null);
         setRegion(null);
-        setHighlight(null);
         onExitRegion();
       }
       return;
     }
     addScreenshot(imageDataUrl, bbox);
-    setHighlight(bbox);
     setRegion(null);
     onExitRegion();
   };
   return <div className="pdf-page" ref={pageRef} style={{ aspectRatio: canvasRef.current?.style.aspectRatio }}>
     <canvas ref={canvasRef} aria-label={`${asset.name} 第 ${pageNumber} 页`} />
     <div ref={textLayerRef} className="pdf-text-layer" onMouseUp={textSelect} />
-    {highlight && <div className="source-highlight" style={{ left: `${highlight[0] * 100}%`, top: `${highlight[1] * 100}%`, width: `${(highlight[2] - highlight[0]) * 100}%`, height: `${(highlight[3] - highlight[1]) * 100}%` }}><span><Check size={12} />来源位置</span></div>}
     <div className="page-interaction-layer" style={{ pointerEvents: regionMode ? "auto" : "none" }} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} />
     {region && regionMode && <div className="region-selection" style={{ left: region.x, top: region.y, width: region.width, height: region.height }}>{region.width > 20 && region.height > 20 && <div className="region-size">{Math.round(region.width)} × {Math.round(region.height)}</div>}</div>}
-    {selection && !regionMode && <div className="selection-toolbar" style={{ left: selection.left, top: selection.top }} onMouseDown={(event) => event.preventDefault()}><button onClick={() => void addText()}><FilePlus2 size={14} />加入 Note</button><button onClick={() => void addText(true)}>新建 Note</button><button onClick={() => { void navigator.clipboard.writeText(selection.text); toast.success("已复制"); }} aria-label="复制"><Clipboard size={14} /></button><button onClick={() => { setHighlight(selection.bbox); setSelection(null); toast.success("已高亮本页位置"); }} aria-label="高亮"><Highlighter size={14} /></button></div>}
+    {selection && !regionMode && <div className="selection-toolbar" style={{ left: selection.left, top: selection.top }} onMouseDown={(event) => event.preventDefault()}><button onClick={() => void addText()}><FilePlus2 size={14} />加入 Note</button><button onClick={() => void addText(true)}>新建 Note</button><button onClick={() => { void navigator.clipboard.writeText(selection.text); toast.success("已复制"); }} aria-label="复制"><Clipboard size={14} /></button></div>}
     {regionMode && region && region.width > 20 && region.height > 20 && <div className="region-action-bar inline-region-bar"><span><Crop size={15} />第 {pageNumber} 页 · 已框选</span><div><button className="toolbar-button" onClick={() => setRegion(null)}>取消</button><button className="toolbar-button" disabled={ocrProgress !== null} onClick={() => void capture(true)}>{ocrProgress !== null ? <><LoaderCircle size={14} className="spin" />OCR {ocrProgress}%</> : <><ScanText size={14} />OCR 后加入</>}</button><button className="primary-button" disabled={ocrProgress !== null} onClick={() => void capture(false)}><Plus size={15} />截图加入 Note</button></div></div>}
   </div>;
 }
 
-export default function PdfViewer({ asset, noteId, onNoteChange, focusAnchor }: { asset: Asset; noteId: string; onNoteChange: (id: string) => void; focusAnchor?: SourceAnchor | null }) {
+export default function PdfViewer({ asset, noteId, onNoteChange }: { asset: Asset; noteId: string; onNoteChange: (id: string) => void }) {
   const { addExcerpt, insertOcrBlocks } = useWorkspace();
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
@@ -214,7 +204,7 @@ export default function PdfViewer({ asset, noteId, onNoteChange, focusAnchor }: 
       if (!active) return;
       setPdf(loaded);
       setPageCount(loaded.numPages);
-      setPageNumber(focusAnchor?.page ?? 1);
+      setPageNumber(1);
       setLoading(false);
     }).catch(() => {
       if (active) { setError("PDF 无法打开，文件可能已损坏或加密。原始文件仍可下载。"); setLoading(false); }
@@ -230,12 +220,6 @@ export default function PdfViewer({ asset, noteId, onNoteChange, focusAnchor }: 
     setStageWidth(stage.clientWidth);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    if (focusAnchor?.assetId !== asset.id || !focusAnchor.page) return;
-    setPageNumber(focusAnchor.page);
-    setTimeout(() => pageRefs.current.get(focusAnchor.page!)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-  }, [focusAnchor, asset.id]);
 
   useEffect(() => {
     const stage = scrollRef.current;
@@ -284,7 +268,7 @@ export default function PdfViewer({ asset, noteId, onNoteChange, focusAnchor }: 
     <div className={`pdf-stage continuous-pdf-stage ${regionMode ? "region-active" : ""}`} ref={scrollRef}>
       {loading && <div className="viewer-loading"><LoaderCircle className="spin" size={24} /><span>正在准备 PDF 与文字层…</span></div>}
       {error && <div className="viewer-error"><ScanText size={32} /><strong>暂时无法预览</strong><p>{error}</p></div>}
-      {!loading && !error && pdf && <div className="pdf-pages">{Array.from({ length: pageCount }, (_, index) => index + 1).map((number) => <div className="pdf-page-wrap" key={number} data-page-number={number} ref={(element) => { if (element) pageRefs.current.set(number, element); else pageRefs.current.delete(number); }}><span className="pdf-page-number">第 {number} 页</span><PdfPage pdf={pdf} pageNumber={number} zoom={zoom} stageWidth={stageWidth} query={query} asset={asset} noteId={noteId} onNoteChange={onNoteChange} focusAnchor={focusAnchor} regionMode={regionMode} onExitRegion={() => setRegionMode(false)} insertBlocks={insertBlocks} addScreenshot={addScreenshot} /></div>)}</div>}
+      {!loading && !error && pdf && <div className="pdf-pages">{Array.from({ length: pageCount }, (_, index) => index + 1).map((number) => <div className="pdf-page-wrap" key={number} data-page-number={number} ref={(element) => { if (element) pageRefs.current.set(number, element); else pageRefs.current.delete(number); }}><span className="pdf-page-number">第 {number} 页</span><PdfPage pdf={pdf} pageNumber={number} zoom={zoom} stageWidth={stageWidth} query={query} asset={asset} noteId={noteId} onNoteChange={onNoteChange} regionMode={regionMode} onExitRegion={() => setRegionMode(false)} insertBlocks={insertBlocks} addScreenshot={addScreenshot} /></div>)}</div>}
     </div>
   </div>;
 }
