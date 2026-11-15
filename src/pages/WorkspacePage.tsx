@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { BookOpen, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, File, FileImage, FilePlus2, FileText, Folder, FolderInput, FolderOpen, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
+import { ArrowLeft, BookOpen, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, File, FileImage, FilePlus2, FileText, Folder, FolderInput, FolderOpen, FolderPlus, MoreHorizontal, PanelRightClose, PanelRightOpen, Pencil, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -8,13 +8,17 @@ import NoteEditor from "@app/components/NoteEditor";
 import UploadDialog from "@app/components/UploadDialog";
 import ExportMenu from "@app/components/ExportMenu";
 import { useWorkspace } from "@app/state/WorkspaceContext";
-import type { Asset } from "@app/types";
+import type { Asset, Folder as FolderType } from "@app/types";
 
-function AssetIcon({ asset, size = 17 }: { asset: Asset; size?: number }) {
+function AssetIcon({ asset, size = 16 }: { asset: Asset; size?: number }) {
   if (asset.kind === "image") return <FileImage size={size} />;
   if (asset.kind === "video") return <Video size={size} />;
   if (["pdf", "markdown", "text"].includes(asset.kind)) return <FileText size={size} />;
   return <File size={size} />;
+}
+
+function searchableText(asset: Asset) {
+  return asset.textContent ?? "";
 }
 
 export default function WorkspacePage() {
@@ -27,20 +31,21 @@ export default function WorkspacePage() {
   const courseNotes = notes.filter((note) => note.courseId === courseId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const currentAsset = courseAssets.find((asset) => asset.id === searchParams.get("file")) ?? courseAssets[0];
   const currentNote = courseNotes.find((note) => note.id === searchParams.get("note")) ?? courseNotes[0];
-  const [fileSearch, setFileSearch] = useState("");
-  const [folderFilter, setFolderFilter] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [fileQuery, setFileQuery] = useState("");
+  const [formatFilter, setFormatFilter] = useState("");
+  const [noteOpen, setNoteOpen] = useState(true);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [split, setSplit] = useState(58);
-  const [mobilePane, setMobilePane] = useState<"source" | "note">("source");
   const [focusAnchor, setFocusAnchor] = useState<Awaited<ReturnType<typeof resolveAnchor>>>(undefined);
   const splitContainer = useRef<HTMLDivElement>(null);
   const creatingNote = useRef(false);
   const anchorRequest = useRef(0);
   const courseFolders = folders.filter((folder) => folder.courseId === courseId);
-  const visibleAssets = courseAssets.filter((asset) => (!folderFilter || asset.folderId === folderFilter) && asset.name.toLowerCase().includes(fileSearch.toLowerCase()));
+  const query = fileQuery.trim().toLowerCase();
+  const matches = (asset: Asset) => (formatFilter ? asset.kind === formatFilter : true) && (query ? asset.name.toLowerCase().includes(query) || searchableText(asset).toLowerCase().includes(query) : true);
 
   useEffect(() => { void getPreference("workspace-split", 58).then((value) => setSplit(Math.max(38, Math.min(70, value)))); }, [getPreference]);
-  useEffect(() => { setFocusAnchor(undefined); setFolderFilter(null); }, [courseId]);
+  useEffect(() => { setFocusAnchor(undefined); setFileQuery(""); setFormatFilter(""); }, [courseId]);
   useEffect(() => {
     if (!course && courses.length) navigate("/courses", { replace: true });
   }, [course, courses.length, navigate]);
@@ -56,13 +61,11 @@ export default function WorkspacePage() {
     if (currentNote) next.set("note", currentNote.id);
     setSearchParams(next);
     setFocusAnchor(undefined);
-    setMobilePane("source");
   };
   const selectNote = (id: string) => {
     const next = new URLSearchParams(searchParams); next.set("note", id);
     if (currentAsset) next.set("file", currentAsset.id);
     setSearchParams(next);
-    setMobilePane("note");
   };
   const newNote = async () => { const note = await createNote(courseId); selectNote(note.id); };
   const resolveSource = async (anchorId: string) => {
@@ -74,7 +77,6 @@ export default function WorkspacePage() {
     if (currentNote) next.set("note", currentNote.id);
     setSearchParams(next);
     setFocusAnchor(resolved);
-    setMobilePane("source");
   };
   const anchorId = searchParams.get("anchor");
   useEffect(() => {
@@ -98,31 +100,60 @@ export default function WorkspacePage() {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
+  const addFolder = async () => {
+    const name = window.prompt("新建文件夹");
+    if (name?.trim()) await createFolder(courseId, name.trim());
+  };
+
+  const fileRow = (asset: Asset, indent: number) => <div className={`file-list-item ${currentAsset?.id === asset.id ? "active" : ""}`} key={asset.id} style={{ paddingLeft: `${10 + indent * 14}px` }}>
+    <button className="file-main-button" onClick={() => selectAsset(asset.id)}><span className={`file-type-icon type-${asset.kind}`}><AssetIcon asset={asset} /></span><span className="file-item-copy"><strong>{asset.name}</strong><small>{asset.kind.toUpperCase()} · {(asset.size / 1024).toFixed(0)} KB</small></span></button>
+    <DropdownMenu><DropdownMenuTrigger asChild><button className="file-more icon-button" aria-label={`${asset.name} 操作`}><MoreHorizontal size={15} /></button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => selectAsset(asset.id)}><BookOpen size={14} />打开资料</DropdownMenuItem>{["pdf", "image", "markdown", "text"].includes(asset.kind) && <DropdownMenuItem onSelect={() => navigate(`/courses/${courseId}/convert?file=${asset.id}`)}><FileText size={14} />转为文字文档</DropdownMenuItem>}<DropdownMenuItem onSelect={() => { const name = window.prompt("重命名资料", asset.name); if (name?.trim()) void renameAsset(asset, name); }}><Pencil size={14} />重命名</DropdownMenuItem><DropdownMenuItem onSelect={() => void moveAssetToFolder(asset, null)}><FolderInput size={14} />移动到根目录</DropdownMenuItem>{courseFolders.map((folder) => <DropdownMenuItem key={folder.id} onSelect={() => void moveAssetToFolder(asset, folder.id)}><Folder size={14} />移动到“{folder.name}”</DropdownMenuItem>)}<DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onSelect={() => { if (window.confirm(`确认移出“${asset.name}”？\n既有笔记与来源快照会保留。`)) void deleteAsset(asset); }}><Trash2 size={14} />移出课程</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+  </div>;
+
+  const folderNode = (folder: FolderType) => {
+    const children = courseAssets.filter((asset) => asset.folderId === folder.id);
+    const isOpen = expanded[folder.id] !== false;
+    return <div className="tree-folder" key={folder.id}>
+      <button className="tree-folder-head" onClick={() => setExpanded((value) => ({ ...value, [folder.id]: !isOpen }))}>{isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<FolderOpen size={15} /><span>{folder.name}</span><small>{children.length}</small></button>
+      {isOpen && <div className="tree-folder-children">{children.map((asset) => fileRow(asset, 1))}{!children.length && <div className="tree-empty">空文件夹</div>}</div>}
+    </div>;
+  };
 
   if (!course) return null;
-  return <div className="workspace-page">
-    <header className="workspace-header">
-      <div className="workspace-breadcrumb"><button onClick={() => navigate("/workbench")} className="course-breadcrumb-icon" aria-label="返回工作台首页" title="工作台首页"><BookOpen size={18} /></button><div><span><button onClick={() => navigate("/workbench")}>工作台</button><ChevronRight size={11} />{course.title}</span><strong>资料整理笔记</strong></div></div>
-      <div className="workspace-selectors"><label className="workspace-select"><BookOpen size={15} /><select aria-label="切换资料" value={currentAsset?.id ?? ""} onChange={(event) => selectAsset(event.target.value)}>{courseAssets.map((asset) => <option value={asset.id} key={asset.id}>{asset.name}</option>)}</select><ChevronDown size={13} /></label><span className="selector-link">→</span><label className="workspace-select note-select"><FileText size={15} /><select aria-label="切换笔记" value={currentNote?.id ?? ""} onChange={(event) => selectNote(event.target.value)}>{courseNotes.map((note) => <option value={note.id} key={note.id}>{note.title}</option>)}</select><ChevronDown size={13} /></label></div>
-      <div className="workspace-header-actions"><button className="toolbar-button new-note-button" onClick={() => void newNote()}><FilePlus2 size={15} />新建 Note</button>{currentNote && <ExportMenu note={currentNote} compact />}</div>
+  const rootFiles = courseAssets.filter((asset) => !asset.folderId);
+  const filteredRoot = rootFiles.filter(matches);
+  const filteredFolders = courseFolders.filter((folder) => courseAssets.some((asset) => asset.folderId === folder.id && matches(asset)));
+  return <div className="workspace-page course-page">
+    <header className="course-workspace-header">
+      <button className="back-link" onClick={() => navigate("/courses")}><ArrowLeft size={15} />课程</button>
+      <h1>{course.title}</h1>
+      <div className="course-search"><Search size={15} /><input value={fileQuery} onChange={(event) => setFileQuery(event.target.value)} placeholder="搜索文件名或内容…" />{fileQuery && <button onClick={() => setFileQuery("")}><X size={13} /></button>}</div>
+      <select className="format-filter" aria-label="按格式筛选" value={formatFilter} onChange={(event) => setFormatFilter(event.target.value)}><option value="">全部格式</option><option value="pdf">PDF</option><option value="image">图片</option><option value="markdown">Markdown</option><option value="text">文本</option><option value="video">视频</option><option value="audio">音频</option><option value="csv">CSV</option><option value="office">Office</option></select>
+      <button className="toolbar-button" onClick={() => void addFolder()}><FolderPlus size={15} />新建文件夹</button>
+      <UploadDialog courseId={courseId} onUploaded={(uploaded) => { if (uploaded[0]) selectAsset(uploaded[0].id); }} trigger={<button className="primary-button"><Upload size={15} />导入资料</button>} />
     </header>
-    <div className="mobile-workspace-tabs"><button className={mobilePane === "source" ? "active" : ""} onClick={() => setMobilePane("source")}><BookOpen size={15} />原始资料</button><button className={mobilePane === "note" ? "active" : ""} onClick={() => setMobilePane("note")}><FileText size={15} />我的 Note{currentNote && <span>{currentNote.blocks.length}</span>}</button></div>
     <div className="workspace-body">
-      {sidebarOpen ? <aside className="file-sidebar">
-        <div className="file-sidebar-heading"><div><span className="eyebrow">COURSE LIBRARY</span><h2>课程资料 <span>{courseAssets.length}</span></h2></div><button className="icon-button" onClick={() => setSidebarOpen(false)} title="收起资料目录"><PanelLeftClose size={17} /></button></div>
-        <label className="file-search"><Search size={15} /><input value={fileSearch} onChange={(event) => setFileSearch(event.target.value)} placeholder="搜索资料…" />{fileSearch && <button onClick={() => setFileSearch("")}><X size={13} /></button>}</label>
-        <div className="file-tree-heading"><button onClick={() => setFolderFilter(null)} className={!folderFilter ? "active" : ""}><FolderOpen size={15} />全部资料<span>{courseAssets.length}</span></button><DropdownMenu><DropdownMenuTrigger asChild><button className="icon-button" aria-label="新建目录"><Plus size={15} /></button></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuItem onSelect={() => { const name = window.prompt("目录名称", "04 新章节"); if (name?.trim()) void createFolder(courseId, name); }}><Folder size={14} />新建目录</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
-        <div className="folder-list">{courseFolders.map((folder) => <button key={folder.id} className={folderFilter === folder.id ? "active" : ""} onClick={() => setFolderFilter(folderFilter === folder.id ? null : folder.id)}><ChevronRight size={12} className={folderFilter === folder.id ? "folder-open" : ""} /><Folder size={15} /><span>{folder.name}</span><small>{courseAssets.filter((asset) => asset.folderId === folder.id).length}</small></button>)}</div>
-        <div className="file-list-label"><span>{folderFilter ? "目录内资料" : "最近导入"}</span><span>{visibleAssets.length} 项</span></div>
-        <div className="file-list">{visibleAssets.map((asset) => <div className={`file-list-item ${currentAsset?.id === asset.id ? "active" : ""}`} key={asset.id}><button className="file-main-button" onClick={() => selectAsset(asset.id)}><span className={`file-type-icon type-${asset.kind}`}><AssetIcon asset={asset} /></span><span className="file-item-copy"><strong>{asset.name}</strong><small><span>{asset.kind.toUpperCase()}</span> · {(asset.size / 1024).toFixed(0)} KB</small></span></button><DropdownMenu><DropdownMenuTrigger asChild><button className="file-more icon-button" aria-label={`${asset.name} 操作`}><MoreHorizontal size={15} /></button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => selectAsset(asset.id)}><BookOpen size={14} />打开资料</DropdownMenuItem><DropdownMenuItem onSelect={() => { const name = window.prompt("重命名资料", asset.name); if (name?.trim()) void renameAsset(asset, name); }}><Pencil size={14} />重命名</DropdownMenuItem><DropdownMenuItem onSelect={() => void moveAssetToFolder(asset, null)}><FolderInput size={14} />移动到根目录</DropdownMenuItem>{courseFolders.map((folder) => <DropdownMenuItem key={folder.id} onSelect={() => void moveAssetToFolder(asset, folder.id)}><Folder size={14} />移动到“{folder.name}”</DropdownMenuItem>)}<DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onSelect={() => { if (window.confirm(`确认移出“${asset.name}”？\n既有笔记与来源快照会保留。`)) void deleteAsset(asset); }}><Trash2 size={14} />移出课程</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>)}{!visibleAssets.length && <div className="file-list-empty"><Search size={22} /><span>没有匹配的资料</span></div>}</div>
-        <UploadDialog courseId={courseId} onUploaded={(uploaded) => { if (uploaded[0]) selectAsset(uploaded[0].id); }} trigger={<button className="sidebar-upload-button"><Upload size={16} />导入新资料<span>⌘ U</span></button>} />
-      </aside> : <button className="reopen-file-sidebar" onClick={() => setSidebarOpen(true)} title="展开资料目录"><PanelLeftOpen size={18} /><span>资料目录</span><ChevronsRight size={14} /></button>}
+      <aside className="file-sidebar">
+        <div className="file-sidebar-heading"><h2>文件 <span>{courseAssets.length}</span></h2></div>
+        <div className="vscode-tree">
+          {filteredRoot.map((asset) => fileRow(asset, 0))}
+          {filteredFolders.map(folderNode)}
+          {!filteredRoot.length && !filteredFolders.length && <div className="file-list-empty"><Search size={20} /><span>没有匹配的文件</span></div>}
+        </div>
+      </aside>
       <div className="split-workspace" ref={splitContainer}>
-        <section className={`viewer-column ${mobilePane === "source" ? "mobile-active" : ""}`} style={{ width: `${split}%` }} aria-label="原始资料">{currentAsset ? <AssetViewer asset={currentAsset} noteId={currentNote?.id ?? ""} onNoteChange={selectNote} focusAnchor={focusAnchor?.asset?.id === currentAsset?.id ? focusAnchor.anchor : null} /> : <div className="no-asset-overlay"><Upload size={30} /><h3>从第一份资料开始</h3><p>导入 PDF、图片或课程文本，即可在旁边做可追溯笔记。</p><UploadDialog courseId={courseId} trigger={<button className="primary-button"><Plus size={16} />导入课程资料</button>} /></div>}</section>
-        <div className="split-divider" onPointerDown={beginSplit} role="separator" aria-label="调整资料与笔记宽度" aria-valuenow={Math.round(split)} tabIndex={0}><span><ChevronsLeft size={12} /><ChevronsRight size={12} /></span></div>
-        <section className={`note-column ${mobilePane === "note" ? "mobile-active" : ""}`} style={{ width: `${100 - split}%` }} aria-label="课程笔记">{currentNote ? <NoteEditor note={currentNote} onResolveSource={(anchorId) => void resolveSource(anchorId)} /> : <div className="empty-note"><FileText size={28} /><p>创建一篇 Note 开始整理</p><button className="primary-button" onClick={() => void newNote()}><Plus size={15} />新建 Note</button></div>}</section>
+        <section className="viewer-column" style={{ width: noteOpen ? `${split}%` : "100%" }} aria-label="原始资料">{currentAsset ? <AssetViewer asset={currentAsset} noteId={currentNote?.id ?? ""} onNoteChange={selectNote} focusAnchor={focusAnchor?.asset?.id === currentAsset?.id ? focusAnchor.anchor : null} /> : <div className="no-asset-overlay"><Upload size={30} /><h3>从第一份资料开始</h3><p>导入 PDF、图片或课程文本，即可在右侧做可追溯笔记。</p><UploadDialog courseId={courseId} trigger={<button className="primary-button"><Plus size={16} />导入课程资料</button>} /></div>}</section>
+        {noteOpen && <div className="split-divider" onPointerDown={beginSplit} role="separator" aria-label="调整资料与笔记宽度" aria-valuenow={Math.round(split)} tabIndex={0}><span><ChevronsLeft size={12} /><ChevronsRight size={12} /></span></div>}
+        {noteOpen ? <section className="note-column" style={{ width: `${100 - split}%` }} aria-label="课程笔记">
+          <div className="note-pane-header">
+            <label className="note-select"><FileText size={15} /><select aria-label="切换笔记" value={currentNote?.id ?? ""} onChange={(event) => selectNote(event.target.value)}>{courseNotes.map((note) => <option value={note.id} key={note.id}>{note.title}</option>)}</select><ChevronDown size={13} /></label>
+            <button className="toolbar-button new-note-button" onClick={() => void newNote()}><FilePlus2 size={15} />新建 Note</button>
+            {currentNote && <ExportMenu note={currentNote} compact />}
+            <button className="icon-button" onClick={() => setNoteOpen(false)} title="关闭笔记栏" aria-label="关闭笔记栏"><PanelRightClose size={17} /></button>
+          </div>
+          {currentNote ? <NoteEditor note={currentNote} onResolveSource={(id) => void resolveSource(id)} /> : <div className="empty-note"><FileText size={28} /><p>创建一篇 Note 开始整理</p><button className="primary-button" onClick={() => void newNote()}><Plus size={15} />新建 Note</button></div>}
+        </section> : <button className="reopen-note-pane" onClick={() => setNoteOpen(true)} title="打开笔记栏" aria-label="打开笔记栏"><PanelRightOpen size={17} /><span>笔记</span></button>}
       </div>
     </div>
-    <div className="workspace-shortcuts"><span>选中文字或框选区域 → 加入 Note → 点击来源回跳</span><button onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? "收起目录" : "展开目录"}<kbd>⌘ B</kbd></button></div>
   </div>;
 }
