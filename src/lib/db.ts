@@ -107,33 +107,22 @@ export function formatTime(ms: number) {
 export async function seedSampleCourse() {
   const db = await getDb();
   if ((await db.count("courses")) > 0) return;
-  const [pdfResponse, markdownResponse, imageResponse] = await Promise.all([
-    fetch("/samples/gradient-lecture.pdf"),
-    fetch("/samples/reading-notes.md"),
-    fetch("/samples/gradient-diagram.png"),
+  const [pdfResponse, markdownResponse, textResponse, imageResponse] = await Promise.all([
+    fetch("/samples/attention-is-all-you-need.pdf"),
+    fetch("/samples/markdown-parsing.md"),
+    fetch("/samples/classic-novel.txt"),
+    fetch("/samples/transformer-architecture.png"),
   ]);
-  if (!pdfResponse.ok || !markdownResponse.ok || !imageResponse.ok) throw new Error("demo_assets_unavailable");
-  const [pdfBlob, markdownBlob, imageBlob] = await Promise.all([pdfResponse.blob(), markdownResponse.blob(), imageResponse.blob()]);
-
-  const { Document, HeadingLevel, Packer, Paragraph, TextRun } = await import("docx");
-  const docxBlob = await Packer.toBlob(new Document({
-    creator: "ReDoc",
-    title: "课程大纲与考核方式",
-    sections: [{ properties: {}, children: [
-      new Paragraph({ text: "课程大纲与考核方式", heading: HeadingLevel.TITLE }),
-      new Paragraph({ children: [new TextRun({ text: "示例课程 · 多元函数微分学", bold: true, size: 24 })] }),
-      new Paragraph({ text: "一、课程内容：偏导数、方向导数、梯度与多元函数极值。" }),
-      new Paragraph({ text: "二、考核方式：平时作业 30%，期中考试 30%，期末考试 40%。" }),
-    ] }],
-  }));
+  if (!pdfResponse.ok || !markdownResponse.ok || !textResponse.ok || !imageResponse.ok) throw new Error("demo_assets_unavailable");
+  const [pdfBlob, markdownBlob, textBlob, imageBlob] = await Promise.all([pdfResponse.blob(), markdownResponse.blob(), textResponse.blob(), imageResponse.blob()]);
 
   const now = new Date().toISOString();
   const course: Course = {
     id: crypto.randomUUID(),
-    title: "示例课程——多元函数微分学",
-    description: "演示文件夹嵌套、多格式资料、笔记与文字转换",
+    title: "示例课程——资料整理演示",
+    description: "演示文件夹嵌套、多格式真实资料、笔记与文字转换",
     color: "#2563eb",
-    icon: "📐",
+    icon: "📚",
     pinned: true,
     pinnedAt: now,
     archived: false,
@@ -141,33 +130,32 @@ export async function seedSampleCourse() {
     updatedAt: now,
   };
   const folders: Folder[] = [
-    { id: crypto.randomUUID(), courseId: course.id, parentId: null, name: "01 课程讲义", kind: "asset", sortOrder: 1 },
-    { id: crypto.randomUUID(), courseId: course.id, parentId: null, name: "02 板书与图像", kind: "asset", sortOrder: 2 },
-    { id: crypto.randomUUID(), courseId: course.id, parentId: null, name: "03 延伸阅读", kind: "asset", sortOrder: 3 },
+    { id: crypto.randomUUID(), courseId: course.id, parentId: null, name: "01 课程资料", kind: "asset", sortOrder: 1 },
+    { id: crypto.randomUUID(), courseId: course.id, parentId: null, name: "02 延伸阅读", kind: "asset", sortOrder: 2 },
   ];
-  const lectureFolder = folders[0];
-  const boardFolder = folders[1];
-  const readingFolder = folders[2];
-  const nestedFolder: Folder = { id: crypto.randomUUID(), courseId: course.id, parentId: lectureFolder.id, name: "01 偏导数与梯度", kind: "asset", sortOrder: 1 };
-  folders.push(nestedFolder);
+  const courseFolder = folders[0];
+  const readingFolder = folders[1];
+  const paperFolder: Folder = { id: crypto.randomUUID(), courseId: course.id, parentId: courseFolder.id, name: "论文原文", kind: "asset", sortOrder: 1 };
+  const imageFolder: Folder = { id: crypto.randomUUID(), courseId: course.id, parentId: courseFolder.id, name: "图表", kind: "asset", sortOrder: 2 };
+  folders.push(paperFolder, imageFolder);
 
   const baseAsset = { courseId: course.id, status: "ready" as const, version: 1 as const, createdAt: now };
   const assets: Asset[] = [
-    { ...baseAsset, id: crypto.randomUUID(), folderId: nestedFolder.id, name: "03 · 偏导数与梯度.pdf", mime: "application/pdf", size: pdfBlob.size, sha256: "sample-pdf-v1", kind: "pdf", blob: pdfBlob },
-    { ...baseAsset, id: crypto.randomUUID(), folderId: boardFolder.id, name: "梯度方向示意图.png", mime: "image/png", size: imageBlob.size, sha256: "sample-image-v1", kind: "image", blob: imageBlob },
-    { ...baseAsset, id: crypto.randomUUID(), folderId: readingFolder.id, name: "偏导数阅读卡.md", mime: "text/markdown", size: markdownBlob.size, sha256: "sample-md-v1", kind: "markdown", textContent: await markdownBlob.text(), blob: markdownBlob },
-    { ...baseAsset, id: crypto.randomUUID(), folderId: lectureFolder.id, name: "课程大纲与考核方式.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: docxBlob.size, sha256: "sample-docx-v1", kind: "office", blob: docxBlob },
+    { ...baseAsset, id: crypto.randomUUID(), folderId: paperFolder.id, name: "Attention Is All You Need.pdf", mime: "application/pdf", size: pdfBlob.size, sha256: "sample-attention-pdf", kind: "pdf", blob: pdfBlob },
+    { ...baseAsset, id: crypto.randomUUID(), folderId: imageFolder.id, name: "Transformer 结构图.png", mime: "image/png", size: imageBlob.size, sha256: "sample-transformer-png", kind: "image", blob: imageBlob },
+    { ...baseAsset, id: crypto.randomUUID(), folderId: readingFolder.id, name: "Markdown 解析库说明.md", mime: "text/markdown", size: markdownBlob.size, sha256: "sample-markdown-md", kind: "markdown", textContent: await markdownBlob.text(), blob: markdownBlob },
+    { ...baseAsset, id: crypto.randomUUID(), folderId: readingFolder.id, name: "经典文学文本.txt", mime: "text/plain", size: textBlob.size, sha256: "sample-gutenberg-txt", kind: "text", textContent: await textBlob.text(), blob: textBlob },
   ];
 
   const note: Note = {
-    id: crypto.randomUUID(), courseId: course.id, folderId: null, title: "课程学习笔记", favorite: false, tags: ["示例"], version: 1, createdAt: now, updatedAt: now,
+    id: crypto.randomUUID(), courseId: course.id, folderId: null, title: "示例笔记", favorite: false, tags: ["示例"], version: 1, createdAt: now, updatedAt: now,
     blocks: [
-      { id: crypto.randomUUID(), type: "heading2", text: "01  重点概念" },
-      { id: crypto.randomUUID(), type: "paragraph", text: "梯度把一阶偏导数组织成向量，指向函数值增长最快的方向。" },
-      { id: crypto.randomUUID(), type: "math", text: "\\nabla f(x,y)=\\left(\\frac{\\partial f}{\\partial x},\\frac{\\partial f}{\\partial y}\\right)" },
-      { id: crypto.randomUUID(), type: "heading3", text: "自测" },
-      { id: crypto.randomUUID(), type: "bullet", text: "方向导数何时等于零？" },
-      { id: crypto.randomUUID(), type: "bullet", text: "梯度为什么垂直于等高线？" },
+      { id: crypto.randomUUID(), type: "heading2", text: "阅读要点" },
+      { id: crypto.randomUUID(), type: "paragraph", text: "《Attention Is All You Need》提出 Transformer，用多头自注意力替代循环结构。" },
+      { id: crypto.randomUUID(), type: "bullet", text: "自注意力：对序列内任意位置建模依赖。" },
+      { id: crypto.randomUUID(), type: "bullet", text: "位置编码：弥补注意力对顺序不敏感。" },
+      { id: crypto.randomUUID(), type: "heading3", text: "待办" },
+      { id: crypto.randomUUID(), type: "bullet", text: "对照结构图梳理 Encoder / Decoder 流程。" },
     ],
   };
 
