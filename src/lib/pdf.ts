@@ -1,7 +1,6 @@
 import katex from "katex";
 import katexCss from "katex/dist/katex.min.css?raw";
 import { renderMarkdownHtml } from "@app/lib/markdown";
-import { blocksToMarkdown } from "@app/lib/export";
 import type { Note } from "@app/types";
 
 function escapeHtml(value: string) {
@@ -73,10 +72,6 @@ export function noteToPrintHtml(note: Note): string {
 
 export function markdownToPrintHtml(markdown: string, title: string, resolveImage?: (src: string) => string): string {
   return wrapPrint(title, renderMarkdownHtml(markdown, resolveImage));
-}
-
-export function noteToMarkdown(note: Note) {
-  return blocksToMarkdown(note, [], false);
 }
 
 export function openPrintWindow(html: string, title: string) {
