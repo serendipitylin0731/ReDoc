@@ -64,6 +64,7 @@ export interface NoteBlock {
   text: string;
   rows?: string[][];
   src?: string;
+  align?: "left" | "center" | "right";
   sourceAnchorId?: string;
   sourceSnapshot?: {
     assetName: string;
