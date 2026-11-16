@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AudioLines, Camera, ChevronRight, Crop, Download, Expand, File, FileArchive, FileImage, FileText, Play, ScanText, Table2, Video } from "lucide-react";
+import { AudioLines, Camera, ChevronRight, Download, Expand, File, FileArchive, FileImage, FileText, Play, ScanText, Table2, Video } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import PdfViewer from "@app/components/PdfViewer";
@@ -36,6 +36,31 @@ function ImageViewer({ asset, noteId, onNoteChange, regionMode = false, onRegion
     setRegion(next);
     report(next);
   };
+  const resizeRef = useRef<{ corner: string; start: Region; startX: number; startY: number } | null>(null);
+  const startResize = (corner: string) => (event: ReactPointerEvent<HTMLElement>) => {
+    if (!region) return;
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeRef.current = { corner, start: { ...region }, startX: event.clientX, startY: event.clientY };
+  };
+  const resizeMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const resize = resizeRef.current;
+    const box = bounds();
+    if (!resize || !box) return;
+    const dx = event.clientX - resize.startX;
+    const dy = event.clientY - resize.startY;
+    const r = resize.start;
+    let next: Region;
+    if (resize.corner === "se") next = { x: r.x, y: r.y, width: Math.max(10, r.width + dx), height: Math.max(10, r.height + dy) };
+    else if (resize.corner === "nw") next = { x: r.x + dx, y: r.y + dy, width: Math.max(10, r.width - dx), height: Math.max(10, r.height - dy) };
+    else if (resize.corner === "ne") next = { x: r.x, y: r.y + dy, width: Math.max(10, r.width + dx), height: Math.max(10, r.height - dy) };
+    else next = { x: r.x + dx, y: r.y, width: Math.max(10, r.width - dx), height: Math.max(10, r.height + dy) };
+    next.x = Math.max(0, Math.min(box.width - next.width, next.x));
+    next.y = Math.max(0, Math.min(box.height - next.height, next.y));
+    setRegion(next);
+    report(next);
+  };
+  const resizeEnd = () => { resizeRef.current = null; };
   const capture = async (withOcr: boolean) => {
     const image = imageRef.current;
     const box = bounds();
@@ -74,13 +99,22 @@ function ImageViewer({ asset, noteId, onNoteChange, regionMode = false, onRegion
     onRegionModeChange?.(false);
   };
   return <>
-    <div className="image-viewer-toolbar"><span><FileImage size={15} />原始图像 · 缩放不会改变来源坐标</span><div className="image-viewer-toolbar-actions">{regionMode && <span className="region-hint">在图片上拖拽框选</span>}<button className={`toolbar-button ${regionMode ? "selected" : ""}`} onClick={() => onRegionModeChange?.(!regionMode)}><Crop size={15} />{regionMode ? "退出框选" : "框选摘录"}</button></div></div>
+    <div className="image-viewer-toolbar"><span><FileImage size={15} />原始图像 · 缩放不会改变来源坐标</span>{regionMode && <span className="region-hint">在图片上拖拽框选</span>}</div>
     <div className={`image-stage ${regionMode ? "region-active" : ""}`}><div className="image-capture-wrap">
       {url && <img ref={imageRef} src={url} alt={asset.name} draggable={false} />}
-      {regionMode && <div className="page-interaction-layer" onPointerDown={down} onPointerMove={move} onPointerUp={() => { start.current = null; }} />}
-      {region && <div className="region-selection" style={{ left: region.x, top: region.y, width: region.width, height: region.height }} />}
+      {regionMode && !region && <div className="page-interaction-layer" onPointerDown={down} onPointerMove={move} onPointerUp={() => { start.current = null; }} />}
+      {regionMode && region && region.width > 8 && region.height > 8 && <>
+        <div className="region-block-overlay" />
+        <div className="region-selection" style={{ left: region.x, top: region.y, width: region.width, height: region.height }}>
+          <span className="region-size">{Math.round(region.width)} × {Math.round(region.height)}</span>
+          <i className="region-handle nw" onPointerDown={startResize("nw")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
+          <i className="region-handle ne" onPointerDown={startResize("ne")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
+          <i className="region-handle sw" onPointerDown={startResize("sw")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
+          <i className="region-handle se" onPointerDown={startResize("se")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
+          <div className="region-float-actions"><button className="toolbar-button" onClick={() => { setRegion(null); report(null); }}>取消</button><button className="toolbar-button" disabled={ocrProgress !== null} onClick={() => void capture(true)}>{ocrProgress !== null ? "OCR…" : "识别后加入"}</button><button className="primary-button" disabled={ocrProgress !== null} onClick={() => void capture(false)}>截图加入 Note</button></div>
+        </div>
+      </>}
     </div></div>
-    {regionMode && <div className="region-action-bar"><span>框选要保留的图像或文字区域</span><div><button className="toolbar-button" disabled={ocrProgress !== null} onClick={() => void capture(true)}>{ocrProgress !== null ? `OCR ${ocrProgress}%` : "OCR 后加入"}</button><button className="primary-button" disabled={ocrProgress !== null} onClick={() => void capture(false)}>截图加入 Note</button></div></div>}
   </>;
 }
 

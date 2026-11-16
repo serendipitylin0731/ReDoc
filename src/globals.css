@@ -2491,7 +2491,19 @@ html.dark .pdf-export-toolbar > span { color: #cbd5e1; }
 .section-icon-button:hover { background: #eaf1ff; color: #1d4ed8; }
 html.dark .section-icon-button { color: #64748b; }
 html.dark .section-icon-button:hover { background: #16233c; color: #93b4f8; }
-.image-viewer-toolbar-actions { display: flex; align-items: center; gap: 8px; }
+
+/* ===== 框选与截取（蓝主题 + 可调大小 + 就地操作） ===== */
+.region-selection { z-index: 60; border: 2px solid #2563eb; background: #3b82f61a; box-shadow: none; pointer-events: auto; }
+.region-size { right: 6px; bottom: 6px; background: #2563eb; color: #fff; font-size: 9px; }
+.region-handle { position: absolute; z-index: 2; width: 12px; height: 12px; border: 2px solid #2563eb; border-radius: 3px; background: #fff; }
+.region-handle.nw { top: -6px; left: -6px; cursor: nwse-resize; }
+.region-handle.ne { top: -6px; right: -6px; cursor: nesw-resize; }
+.region-handle.sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+.region-handle.se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+.region-float-actions { position: absolute; right: 6px; bottom: 32px; z-index: 3; display: flex; gap: 6px; }
+.region-float-actions .primary-button, .region-float-actions .toolbar-button { min-height: 30px; font-size: 10px; }
+.region-block-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(15, 23, 42, 0.18); }
+.pdf-page.region-active, .image-stage.region-active { position: relative; z-index: 60; }
 
 /* ===== 顶部栏课程上下文 ===== */
 .header-course-back { display: inline-flex; align-items: center; gap: 5px; margin-left: 6px; padding: 0; background: transparent; color: #64748b; font-size: 12px; }

@@ -112,6 +112,31 @@ function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNo
     onRegion(normalizedRegion(next));
   };
   const pointerUp = () => { startPoint.current = null; };
+  const resizeRef = useRef<{ corner: string; start: Region; startX: number; startY: number } | null>(null);
+  const startResize = (corner: string) => (event: ReactPointerEvent<HTMLElement>) => {
+    if (!region) return;
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeRef.current = { corner, start: { ...region }, startX: event.clientX, startY: event.clientY };
+  };
+  const resizeMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const resize = resizeRef.current;
+    const bounds = pageBox();
+    if (!resize || !bounds) return;
+    const dx = event.clientX - resize.startX;
+    const dy = event.clientY - resize.startY;
+    const r = resize.start;
+    let next: Region;
+    if (resize.corner === "se") next = { x: r.x, y: r.y, width: Math.max(10, r.width + dx), height: Math.max(10, r.height + dy) };
+    else if (resize.corner === "nw") next = { x: r.x + dx, y: r.y + dy, width: Math.max(10, r.width - dx), height: Math.max(10, r.height - dy) };
+    else if (resize.corner === "ne") next = { x: r.x, y: r.y + dy, width: Math.max(10, r.width + dx), height: Math.max(10, r.height - dy) };
+    else next = { x: r.x + dx, y: r.y, width: Math.max(10, r.width - dx), height: Math.max(10, r.height + dy) };
+    next.x = Math.max(0, Math.min(bounds.width - next.width, next.x));
+    next.y = Math.max(0, Math.min(bounds.height - next.height, next.y));
+    setRegion(next);
+    onRegion(normalizedRegion(next));
+  };
+  const resizeEnd = () => { resizeRef.current = null; };
   const textSelect = () => {
     if (regionMode) return;
     const selected = window.getSelection();
@@ -171,13 +196,22 @@ function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNo
     onRegion(null);
     onExitRegion();
   };
-  return <div className="pdf-page" ref={pageRef}>
+  return <div className={`pdf-page ${regionMode ? "region-active" : ""}`} ref={pageRef}>
     <canvas ref={canvasRef} aria-label={`${asset.name} 第 ${pageNumber} 页`} />
     <div ref={textLayerRef} className="pdf-text-layer" onMouseUp={textSelect} />
-    <div className="page-interaction-layer" style={{ pointerEvents: regionMode ? "auto" : "none" }} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} />
-    {region && regionMode && <div className="region-selection" style={{ left: region.x, top: region.y, width: region.width, height: region.height }}>{region.width > 20 && region.height > 20 && <div className="region-size">{Math.round(region.width)} × {Math.round(region.height)}</div>}</div>}
+    <div className="page-interaction-layer" style={{ pointerEvents: regionMode && !region ? "auto" : "none" }} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} />
+    {regionMode && region && region.width > 8 && region.height > 8 && <>
+      <div className="region-block-overlay" />
+      <div className="region-selection" style={{ left: region.x, top: region.y, width: region.width, height: region.height }}>
+        <span className="region-size">{Math.round(region.width)} × {Math.round(region.height)}</span>
+        <i className="region-handle nw" onPointerDown={startResize("nw")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
+        <i className="region-handle ne" onPointerDown={startResize("ne")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
+        <i className="region-handle sw" onPointerDown={startResize("sw")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
+        <i className="region-handle se" onPointerDown={startResize("se")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
+        <div className="region-float-actions"><button className="toolbar-button" onClick={() => { setRegion(null); onRegion(null); }}>取消</button><button className="toolbar-button" disabled={ocrProgress !== null} onClick={() => void capture(true)}>{ocrProgress !== null ? <LoaderCircle size={14} className="spin" /> : <ScanText size={14} />}识别后加入</button><button className="primary-button" disabled={ocrProgress !== null} onClick={() => void capture(false)}><Plus size={15} />截图加入 Note</button></div>
+      </div>
+    </>}
     {selection && !regionMode && <div className="selection-toolbar" style={{ left: selection.left, top: selection.top }} onMouseDown={(event) => event.preventDefault()}><button onClick={() => void addText()}><FilePlus2 size={14} />加入 Note</button><button onClick={() => void addText(true)}>新建 Note</button><button onClick={() => { void navigator.clipboard.writeText(selection.text); toast.success("已复制"); }} aria-label="复制"><Clipboard size={14} /></button></div>}
-    {regionMode && region && region.width > 20 && region.height > 20 && <div className="region-action-bar inline-region-bar"><span><Crop size={15} />第 {pageNumber} 页 · 已框选</span><div><button className="toolbar-button" onClick={() => { setRegion(null); onRegion(null); }}>取消</button><button className="toolbar-button" disabled={ocrProgress !== null} onClick={() => void capture(true)}>{ocrProgress !== null ? <><LoaderCircle size={14} className="spin" />OCR {ocrProgress}%</> : <><ScanText size={14} />OCR 后加入</>}</button><button className="primary-button" disabled={ocrProgress !== null} onClick={() => void capture(false)}><Plus size={15} />截图加入 Note</button></div></div>}
   </div>;
 }
 
@@ -277,7 +311,7 @@ export default function PdfViewer({ asset, noteId, onNoteChange, regionMode = fa
   return <div className="pdf-viewer">
     <div className="viewer-controls">
       <div className="page-controls"><button className="icon-button" disabled={pageNumber <= 1} onClick={() => pageRefs.current.get(pageNumber - 1)?.scrollIntoView({ behavior: "smooth" })} aria-label="上一页"><ChevronLeft size={17} /></button><label><input aria-label="当前页码" value={pageNumber} onChange={(event) => { const value = Number(event.target.value); if (value >= 1 && value <= pageCount) pageRefs.current.get(value)?.scrollIntoView({ behavior: "smooth" }); }} /> <span>/ {pageCount || "–"}</span></label><button className="icon-button" disabled={!pageCount || pageNumber >= pageCount} onClick={() => pageRefs.current.get(pageNumber + 1)?.scrollIntoView({ behavior: "smooth" })} aria-label="下一页"><ChevronRight size={17} /></button></div>
-      <div className="viewer-control-group"><button className={`toolbar-button ${regionMode ? "selected" : ""}`} onClick={() => onRegionModeChange?.(!regionMode)}><Crop size={15} />{regionMode ? "退出框选" : "框选摘录"}</button><button className={`icon-button ${searchOpen ? "selected" : ""}`} onClick={() => setSearchOpen((value) => !value)} aria-label="搜索 PDF"><Search size={16} /></button></div>
+      <div className="viewer-control-group"><button className={`icon-button ${searchOpen ? "selected" : ""}`} onClick={() => setSearchOpen((value) => !value)} aria-label="搜索 PDF"><Search size={16} /></button></div>
       <div className="zoom-controls"><button className="icon-button" onClick={() => setZoom((value) => Math.max(.6, value - .15))} aria-label="缩小"><Minus size={16} /></button><button onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button><button className="icon-button" onClick={() => setZoom((value) => Math.min(2.2, value + .15))} aria-label="放大"><Plus size={16} /></button></div>
     </div>
     {searchOpen && <div className="pdf-search-bar"><Search size={15} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} placeholder="在这份 PDF 中查找…" /><button onClick={() => void search()}>查找</button><button className="icon-button" onClick={() => { setSearchOpen(false); setQuery(""); }} aria-label="关闭搜索"><X size={15} /></button></div>}
