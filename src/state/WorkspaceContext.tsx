@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { deleteRecord, detectAssetKind, getAll, getDb, getRecord, putRecord, saveNote, sha256 } from "@app/lib/db";
+import { deleteRecord, detectAssetKind, getAll, getDb, getRecord, putRecord, saveNote, seedSampleCourse, sha256 } from "@app/lib/db";
 import { reconstructAsset, type ReconstructOptions } from "@app/lib/reconstruct";
 import type { Asset, AssetKind, Course, ExcerptInput, Folder, Job, Note, NoteBlock, ReconstructionDocument, SourceAnchor } from "@app/types";
 
@@ -16,7 +16,7 @@ interface WorkspaceContextValue {
   saveStates: Record<string, "saving" | "saved" | "conflict">;
   createCourse: (title: string, description: string, extra?: Partial<Pick<Course, "icon" | "color" | "pinned">>) => Promise<Course>;
   updateCourse: (course: Course) => Promise<void>;
-  createFolder: (courseId: string, name: string) => Promise<void>;
+  createFolder: (courseId: string, name: string, kind?: "asset" | "note", parentId?: string | null) => Promise<void>;
   uploadFiles: (courseId: string, files: File[], folderId?: string | null) => Promise<Asset[]>;
   renameAsset: (asset: Asset, name: string) => Promise<void>;
   moveAssetToFolder: (asset: Asset, folderId: string | null) => Promise<void>;
@@ -24,6 +24,7 @@ interface WorkspaceContextValue {
   createNote: (courseId: string, title?: string) => Promise<Note>;
   updateNote: (note: Note, immediate?: boolean) => void;
   removeNote: (note: Note) => Promise<void>;
+  moveNoteToFolder: (note: Note, folderId: string | null) => void;
   addExcerpt: (input: ExcerptInput) => Promise<string>;
   noteCursor: { noteId: string; index: number } | null;
   setNoteCursor: (noteId: string, index: number) => void;
@@ -121,6 +122,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ...document, status: "failed" as const, updatedAt: new Date().toISOString(),
         })));
         if (active) await refresh();
+        if (active && (await db.count("courses")) === 0) {
+          await seedSampleCourse();
+          if (active) await refresh();
+        }
       } catch {
         toast.error("资料库初始化失败，请检查浏览器存储权限。");
       } finally {
@@ -150,8 +155,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setCourses((current) => current.map((item) => item.id === course.id ? updated : item));
   }, []);
 
-  const createFolder = useCallback(async (courseId: string, name: string) => {
-    const folder: Folder = { id: crypto.randomUUID(), courseId, parentId: null, name: name.trim(), sortOrder: folders.filter((item) => item.courseId === courseId).length + 1 };
+  const createFolder = useCallback(async (courseId: string, name: string, kind: "asset" | "note" = "asset", parentId: string | null = null) => {
+    const folder: Folder = { id: crypto.randomUUID(), courseId, parentId, name: name.trim(), kind, sortOrder: folders.filter((item) => item.courseId === courseId).length + 1 };
     await putRecord("folders", folder);
     setFolders((current) => [...current, folder]);
   }, [folders]);
@@ -287,6 +292,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     toast.success("笔记已删除");
   }, []);
 
+  const moveNoteToFolder = useCallback((note: Note, folderId: string | null) => {
+    updateNote({ ...note, folderId });
+  }, [updateNote]);
+
   const addExcerpt = useCallback(async (input: ExcerptInput) => {
     let target = notesRef.current.find((note) => note.id === input.noteId);
     if (input.createNew || !target) target = await createNote(input.asset.courseId, `${input.asset.name.replace(/\.[^.]+$/, "")} · 摘录`);
@@ -362,7 +371,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const value: WorkspaceContextValue = {
     loading, courses, folders, assets, notes, anchors, jobs, documents, saveStates, noteCursor,
-    createCourse, updateCourse, createFolder, uploadFiles, renameAsset, moveAssetToFolder, deleteAsset, createNote, updateNote, removeNote,
+    createCourse, updateCourse, createFolder, uploadFiles, renameAsset, moveAssetToFolder, deleteAsset, createNote, updateNote, removeNote, moveNoteToFolder,
     addExcerpt, setNoteCursor, insertOcrBlocks, resolveAnchor, startReconstruction, saveDocumentAsset, setPreference, getPreference, refresh,
   };
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

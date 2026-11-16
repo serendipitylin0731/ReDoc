@@ -65,7 +65,7 @@ function SortMenu({ value, onChange, label }: { value: SortState; onChange: (val
 
 export default function WorkspacePage() {
   const { courseId = "" } = useParams();
-  const { courses, assets, notes, folders, createNote, updateNote, renameAsset, moveAssetToFolder, deleteAsset, removeNote, createFolder, getPreference, setPreference } = useWorkspace();
+  const { courses, assets, notes, folders, createNote, updateNote, renameAsset, moveAssetToFolder, deleteAsset, removeNote, moveNoteToFolder, createFolder, getPreference, setPreference } = useWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const course = courses.find((item) => item.id === courseId);
@@ -88,7 +88,8 @@ export default function WorkspacePage() {
   const [split, setSplit] = useState(58);
   const splitContainer = useRef<HTMLDivElement>(null);
   const creatingNote = useRef(false);
-  const courseFolders = folders.filter((folder) => folder.courseId === courseId);
+  const assetFolders = folders.filter((folder) => folder.courseId === courseId && folder.kind !== "note");
+  const noteFolders = folders.filter((folder) => folder.courseId === courseId && folder.kind === "note");
   const query = fileQuery.trim().toLowerCase();
   const matches = (asset: Asset) => (formatFilter ? asset.kind === formatFilter : true) && (query ? asset.name.toLowerCase().includes(query) || searchableText(asset).toLowerCase().includes(query) : true);
 
@@ -148,6 +149,10 @@ export default function WorkspacePage() {
     const name = window.prompt("新建文件夹");
     if (name?.trim()) await createFolder(courseId, name.trim());
   };
+  const addNoteFolder = async () => {
+    const name = window.prompt("新建笔记文件夹");
+    if (name?.trim()) await createFolder(courseId, name.trim(), "note");
+  };
   const downloadCourseZip = async () => {
     const zip = new JSZip();
     for (const asset of courseAssets) zip.file(asset.name, asset.blob);
@@ -168,13 +173,22 @@ export default function WorkspacePage() {
 
   const fileRow = (asset: Asset, indent: number) => <div className={`file-list-item ${currentAsset?.id === asset.id ? "active" : ""}`} key={asset.id} style={{ paddingLeft: `${10 + indent * 14}px` }}>
     <button className="file-main-button" onClick={() => selectAsset(asset.id)}><span className={`file-type-icon type-${asset.kind}`}><AssetIcon asset={asset} /></span><span className="file-item-copy"><strong>{asset.name}</strong><small>{asset.kind.toUpperCase()} · {(asset.size / 1024).toFixed(0)} KB</small></span></button>
-    <DropdownMenu><DropdownMenuTrigger asChild><button className="file-more icon-button" aria-label={`${asset.name} 操作`}><MoreHorizontal size={15} /></button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => selectAsset(asset.id)}><BookOpen size={14} />打开资料</DropdownMenuItem>{["pdf", "image", "markdown", "text"].includes(asset.kind) && <DropdownMenuItem onSelect={() => { selectAsset(asset.id); setTab("convert"); setWorkbenchOpen(true); }}><ScanText size={14} />转为文字文档</DropdownMenuItem>}<DropdownMenuItem onSelect={() => { const name = window.prompt("重命名资料", asset.name); if (name?.trim()) void renameAsset(asset, name); }}><Pencil size={14} />重命名</DropdownMenuItem><DropdownMenuItem onSelect={() => void moveAssetToFolder(asset, null)}><FolderInput size={14} />移动到根目录</DropdownMenuItem>{courseFolders.map((folder) => <DropdownMenuItem key={folder.id} onSelect={() => void moveAssetToFolder(asset, folder.id)}><Folder size={14} />移动到“{folder.name}”</DropdownMenuItem>)}<DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onSelect={() => { if (window.confirm(`确认移出“${asset.name}”？\n既有笔记与内容快照会保留。`)) void deleteAsset(asset); }}><Trash2 size={14} />移出课程</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+    <DropdownMenu><DropdownMenuTrigger asChild><button className="file-more icon-button" aria-label={`${asset.name} 操作`}><MoreHorizontal size={15} /></button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => selectAsset(asset.id)}><BookOpen size={14} />打开资料</DropdownMenuItem>{["pdf", "image", "markdown", "text"].includes(asset.kind) && <DropdownMenuItem onSelect={() => { selectAsset(asset.id); setTab("convert"); setWorkbenchOpen(true); }}><ScanText size={14} />转为文字文档</DropdownMenuItem>}<DropdownMenuItem onSelect={() => { const name = window.prompt("重命名资料", asset.name); if (name?.trim()) void renameAsset(asset, name); }}><Pencil size={14} />重命名</DropdownMenuItem><DropdownMenuItem onSelect={() => void moveAssetToFolder(asset, null)}><FolderInput size={14} />移动到根目录</DropdownMenuItem>{assetFolders.map((folder) => <DropdownMenuItem key={folder.id} onSelect={() => void moveAssetToFolder(asset, folder.id)}><Folder size={14} />移动到“{folder.name}”</DropdownMenuItem>)}<DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onSelect={() => { if (window.confirm(`确认移出“${asset.name}”？\n既有笔记与内容快照会保留。`)) void deleteAsset(asset); }}><Trash2 size={14} />移出课程</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
   </div>;
 
   const noteRow = (note: Note) => <div className={`file-list-item note-list-row ${currentNote?.id === note.id ? "active" : ""}`} key={note.id} style={{ paddingLeft: "10px" }}>
     <button className="file-main-button" onClick={() => selectNote(note.id)}><span className="file-type-icon type-note"><FileText size={16} /></span><span className="file-item-copy"><strong>{note.title || "未命名笔记"}</strong><small>NOTE · {note.blocks.length} 块</small></span></button>
-    <DropdownMenu><DropdownMenuTrigger asChild><button className="file-more icon-button" aria-label={`${note.title} 操作`}><MoreHorizontal size={15} /></button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => { const name = window.prompt("重命名笔记", note.title); if (name?.trim()) updateNote({ ...note, title: name.trim() }); }}><Pencil size={14} />重命名</DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={() => { if (window.confirm(`确认删除“${note.title}”？`)) void removeNote(note); }}><Trash2 size={14} />删除笔记</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+    <DropdownMenu><DropdownMenuTrigger asChild><button className="file-more icon-button" aria-label={`${note.title} 操作`}><MoreHorizontal size={15} /></button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => { const name = window.prompt("重命名笔记", note.title); if (name?.trim()) updateNote({ ...note, title: name.trim() }); }}><Pencil size={14} />重命名</DropdownMenuItem><DropdownMenuItem onSelect={() => moveNoteToFolder(note, null)}><FolderInput size={14} />移动到根目录</DropdownMenuItem>{noteFolders.map((folder) => <DropdownMenuItem key={folder.id} onSelect={() => moveNoteToFolder(note, folder.id)}><Folder size={14} />移动到“{folder.name}”</DropdownMenuItem>)}<DropdownMenuItem variant="destructive" onSelect={() => { if (window.confirm(`确认删除“${note.title}”？`)) void removeNote(note); }}><Trash2 size={14} />删除笔记</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
   </div>;
+
+  const noteFolderNode = (folder: FolderType) => {
+    const children = displayNotes.filter((note) => note.folderId === folder.id);
+    const isOpen = expanded[folder.id] !== false;
+    return <div className="tree-folder" key={folder.id}>
+      <button className="tree-folder-head" onClick={() => setExpanded((value) => ({ ...value, [folder.id]: !isOpen }))}>{isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<FolderOpen size={15} /><span>{folder.name}</span><small>{children.length}</small></button>
+      {isOpen && <div className="tree-folder-children">{children.map(noteRow)}{!children.length && <div className="tree-empty">空文件夹</div>}</div>}
+    </div>;
+  };
 
   const folderNode = (folder: FolderType) => {
     const children = sortAssets(courseAssets.filter((asset) => asset.folderId === folder.id));
@@ -188,7 +202,7 @@ export default function WorkspacePage() {
   if (!course) return null;
   const rootFiles = courseAssets.filter((asset) => !asset.folderId);
   const filteredRoot = sortAssets(rootFiles.filter(matches));
-  const filteredFolders = courseFolders.filter((folder) => courseAssets.some((asset) => asset.folderId === folder.id && matches(asset)));
+  const filteredFolders = assetFolders.filter((folder) => courseAssets.some((asset) => asset.folderId === folder.id && matches(asset)));
 
   return <div className="workspace-page course-page">
     <HeaderContent><button className="header-course-back" onClick={() => navigate("/courses")}><ArrowLeft size={15} />课程</button><span className="header-course-title">{course.title}</span><button className="toolbar-button header-zip-button" onClick={() => void downloadCourseZip()} title="下载整个课程为压缩包"><Download size={15} />打包下载</button></HeaderContent>
@@ -203,8 +217,8 @@ export default function WorkspacePage() {
           {filesOpen && <div className="vscode-tree">{filteredRoot.map((asset) => fileRow(asset, 0))}{filteredFolders.map(folderNode)}{!filteredRoot.length && !filteredFolders.length && <div className="file-list-empty"><Search size={20} /><span>没有匹配的文件</span></div>}</div>}
         </div>
         <div className="file-section notes-section">
-          <div className="file-section-head"><button onClick={() => setNotesOpen((value) => !value)}>{notesOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>笔记</span><small>{courseNotes.length}</small></button><SortMenu value={noteSort} onChange={setNoteSort} label="笔记" /><button className="notes-new-button" onClick={() => void newNote()} title="新建笔记" aria-label="新建笔记"><Plus size={14} /></button></div>
-          {notesOpen && <div className="vscode-tree">{displayNotes.map(noteRow)}{!courseNotes.length && <div className="tree-empty">还没有笔记</div>}</div>}
+          <div className="file-section-head"><button onClick={() => setNotesOpen((value) => !value)}>{notesOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>笔记</span><small>{courseNotes.length}</small></button><SortMenu value={noteSort} onChange={setNoteSort} label="笔记" /><button className="notes-new-button" onClick={() => void addNoteFolder()} title="新建笔记文件夹" aria-label="新建笔记文件夹"><FolderPlus size={14} /></button><button className="notes-new-button" onClick={() => void newNote()} title="新建笔记" aria-label="新建笔记"><Plus size={14} /></button></div>
+          {notesOpen && <div className="vscode-tree">{displayNotes.filter((note) => !note.folderId).map(noteRow)}{noteFolders.map(noteFolderNode)}{!displayNotes.length && !noteFolders.length && <div className="tree-empty">还没有笔记</div>}</div>}
         </div>
       </aside>
       <div className="split-workspace" ref={splitContainer}>

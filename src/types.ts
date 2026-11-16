@@ -20,6 +20,7 @@ export interface Folder {
   courseId: string;
   parentId: string | null;
   name: string;
+  kind?: "asset" | "note";
   sortOrder: number;
 }
 

@@ -104,7 +104,7 @@ export function formatTime(ms: number) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export async function seedDemo() {
+export async function seedSampleCourse() {
   const db = await getDb();
   if ((await db.count("courses")) > 0) return;
   const [pdfResponse, markdownResponse, imageResponse] = await Promise.all([
@@ -114,72 +114,67 @@ export async function seedDemo() {
   ]);
   if (!pdfResponse.ok || !markdownResponse.ok || !imageResponse.ok) throw new Error("demo_assets_unavailable");
   const [pdfBlob, markdownBlob, imageBlob] = await Promise.all([pdfResponse.blob(), markdownResponse.blob(), imageResponse.blob()]);
+
+  const { Document, HeadingLevel, Packer, Paragraph, TextRun } = await import("docx");
+  const docxBlob = await Packer.toBlob(new Document({
+    creator: "ReDoc",
+    title: "课程大纲与考核方式",
+    sections: [{ properties: {}, children: [
+      new Paragraph({ text: "课程大纲与考核方式", heading: HeadingLevel.TITLE }),
+      new Paragraph({ children: [new TextRun({ text: "示例课程 · 多元函数微分学", bold: true, size: 24 })] }),
+      new Paragraph({ text: "一、课程内容：偏导数、方向导数、梯度与多元函数极值。" }),
+      new Paragraph({ text: "二、考核方式：平时作业 30%，期中考试 30%，期末考试 40%。" }),
+    ] }],
+  }));
+
   const now = new Date().toISOString();
   const course: Course = {
-    id: "demo-calculus",
-    title: "高等数学 · 秋季学期",
-    description: "多元函数微分学 · 12 周课程资料与复习笔记",
-    color: "#52715f",
+    id: crypto.randomUUID(),
+    title: "示例课程——多元函数微分学",
+    description: "演示文件夹嵌套、多格式资料、笔记与文字转换",
+    color: "#2563eb",
     icon: "📐",
-    pinned: false,
-    pinnedAt: null,
+    pinned: true,
+    pinnedAt: now,
     archived: false,
     createdAt: now,
     updatedAt: now,
   };
   const folders: Folder[] = [
-    { id: "folder-lectures", courseId: course.id, parentId: null, name: "01 课程讲义", sortOrder: 1 },
-    { id: "folder-board", courseId: course.id, parentId: null, name: "02 板书与图像", sortOrder: 2 },
-    { id: "folder-reading", courseId: course.id, parentId: null, name: "03 延伸阅读", sortOrder: 3 },
+    { id: crypto.randomUUID(), courseId: course.id, parentId: null, name: "01 课程讲义", kind: "asset", sortOrder: 1 },
+    { id: crypto.randomUUID(), courseId: course.id, parentId: null, name: "02 板书与图像", kind: "asset", sortOrder: 2 },
+    { id: crypto.randomUUID(), courseId: course.id, parentId: null, name: "03 延伸阅读", kind: "asset", sortOrder: 3 },
   ];
-  const baseAsset = { courseId: course.id, status: "ready" as const, version: 1 as const, createdAt: now, demo: true };
+  const lectureFolder = folders[0];
+  const boardFolder = folders[1];
+  const readingFolder = folders[2];
+  const nestedFolder: Folder = { id: crypto.randomUUID(), courseId: course.id, parentId: lectureFolder.id, name: "01 偏导数与梯度", kind: "asset", sortOrder: 1 };
+  folders.push(nestedFolder);
+
+  const baseAsset = { courseId: course.id, status: "ready" as const, version: 1 as const, createdAt: now };
   const assets: Asset[] = [
-    { ...baseAsset, id: "demo-pdf", folderId: "folder-lectures", name: "03 · 偏导数与梯度.pdf", mime: "application/pdf", size: pdfBlob.size, sha256: "demo-pdf-original-v1", kind: "pdf", blob: pdfBlob },
-    { ...baseAsset, id: "demo-image", folderId: "folder-board", name: "梯度方向示意图.png", mime: "image/png", size: imageBlob.size, sha256: "demo-image-original-v1", kind: "image", blob: imageBlob },
-    { ...baseAsset, id: "demo-markdown", folderId: "folder-reading", name: "偏导数阅读卡.md", mime: "text/markdown", size: markdownBlob.size, sha256: "demo-markdown-original-v1", kind: "markdown", textContent: await markdownBlob.text(), blob: markdownBlob },
+    { ...baseAsset, id: crypto.randomUUID(), folderId: nestedFolder.id, name: "03 · 偏导数与梯度.pdf", mime: "application/pdf", size: pdfBlob.size, sha256: "sample-pdf-v1", kind: "pdf", blob: pdfBlob },
+    { ...baseAsset, id: crypto.randomUUID(), folderId: boardFolder.id, name: "梯度方向示意图.png", mime: "image/png", size: imageBlob.size, sha256: "sample-image-v1", kind: "image", blob: imageBlob },
+    { ...baseAsset, id: crypto.randomUUID(), folderId: readingFolder.id, name: "偏导数阅读卡.md", mime: "text/markdown", size: markdownBlob.size, sha256: "sample-md-v1", kind: "markdown", textContent: await markdownBlob.text(), blob: markdownBlob },
+    { ...baseAsset, id: crypto.randomUUID(), folderId: lectureFolder.id, name: "课程大纲与考核方式.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: docxBlob.size, sha256: "sample-docx-v1", kind: "office", blob: docxBlob },
   ];
-  const anchors: SourceAnchor[] = [
-    { id: "anchor-gradient", assetId: "demo-pdf", assetVersion: 1, kind: "pdf_text", page: 2, bbox: [0.08, 0.225, 0.91, 0.315], textQuote: "梯度将所有一阶偏导数组织成向量。它既指出函数值增长最快的方向，也用向量长度表示这一方向上的变化率。", createdAt: now },
-    { id: "anchor-example", assetId: "demo-pdf", assetVersion: 1, kind: "pdf_text", page: 1, bbox: [0.11, 0.61, 0.84, 0.66], textQuote: "∂f/∂x = 2xy        ∂f/∂y = x² + 9y²", createdAt: now },
-  ];
-  const notes: Note[] = [
-    {
-      id: "demo-note-gradient", courseId: course.id, folderId: null, title: "梯度与方向导数｜第三章", favorite: true, tags: ["第三章", "多元微积分"], version: 1, createdAt: now, updatedAt: now,
-      blocks: [
-        { id: "block-intro", type: "paragraph", text: "这一章的关键不是记住三个公式，而是把“方向”和“变化率”放在同一个向量里理解。" },
-        { id: "block-core", type: "heading2", text: "01  核心概念" },
-        { id: "block-gradient-source", type: "excerpt", text: anchors[0].textQuote ?? "", sourceAnchorId: anchors[0].id, sourceSnapshot: { assetName: assets[0].name, label: sourceLabel(anchors[0], assets[0].name), text: anchors[0].textQuote } },
-        { id: "block-math", type: "math", text: "\\nabla f(x,y)=\\left(\\frac{\\partial f}{\\partial x},\\frac{\\partial f}{\\partial y}\\right)" },
-        { id: "block-direction", type: "paragraph", text: "当单位向量 <strong>u</strong> 与梯度同向时，方向导数最大；与梯度垂直时，方向导数为零。" },
-        { id: "block-example-heading", type: "heading2", text: "02  用一道例题固定记忆" },
-        { id: "block-example", type: "excerpt", text: anchors[1].textQuote ?? "", sourceAnchorId: anchors[1].id, sourceSnapshot: { assetName: assets[0].name, label: sourceLabel(anchors[1], assets[0].name), text: anchors[1].textQuote } },
-        { id: "block-check", type: "quote", text: "自测：梯度为什么垂直于等高线？尝试从方向导数为零开始解释。" },
-      ],
-    },
-    {
-      id: "demo-note-practice", courseId: course.id, folderId: null, title: "偏导数计算练习", favorite: false, tags: ["练习", "第三章"], version: 1, createdAt: now, updatedAt: now,
-      blocks: [
-        { id: "practice-1", type: "heading2", text: "计算步骤" },
-        { id: "practice-2", type: "numbered", text: "固定另一个变量，把它当作常数。" },
-        { id: "practice-3", type: "numbered", text: "使用一元函数求导规则，再检查上下标与次数。" },
-        { id: "practice-4", type: "math", text: "f(x,y)=x^2y+3y^3" },
-      ],
-    },
-    {
-      id: "demo-note-review", courseId: course.id, folderId: null, title: "期中复习提纲", favorite: false, tags: ["复习"], version: 1, createdAt: now, updatedAt: now,
-      blocks: [
-        { id: "review-1", type: "heading2", text: "多元微分学" },
-        { id: "review-2", type: "bullet", text: "偏导数的定义与几何意义" },
-        { id: "review-3", type: "bullet", text: "梯度、方向导数与等高线" },
-        { id: "review-4", type: "bullet", text: "复合函数求导与隐函数求导" },
-      ],
-    },
-  ];
-  const tx = db.transaction(["courses", "folders", "assets", "anchors", "notes"], "readwrite");
+
+  const note: Note = {
+    id: crypto.randomUUID(), courseId: course.id, folderId: null, title: "课程学习笔记", favorite: false, tags: ["示例"], version: 1, createdAt: now, updatedAt: now,
+    blocks: [
+      { id: crypto.randomUUID(), type: "heading2", text: "01  重点概念" },
+      { id: crypto.randomUUID(), type: "paragraph", text: "梯度把一阶偏导数组织成向量，指向函数值增长最快的方向。" },
+      { id: crypto.randomUUID(), type: "math", text: "\\nabla f(x,y)=\\left(\\frac{\\partial f}{\\partial x},\\frac{\\partial f}{\\partial y}\\right)" },
+      { id: crypto.randomUUID(), type: "heading3", text: "自测" },
+      { id: crypto.randomUUID(), type: "bullet", text: "方向导数何时等于零？" },
+      { id: crypto.randomUUID(), type: "bullet", text: "梯度为什么垂直于等高线？" },
+    ],
+  };
+
+  const tx = db.transaction(["courses", "folders", "assets", "notes"], "readwrite");
   await tx.objectStore("courses").add(course);
   await Promise.all(folders.map((folder) => tx.objectStore("folders").add(folder)));
   await Promise.all(assets.map((asset) => tx.objectStore("assets").add(asset)));
-  await Promise.all(anchors.map((anchor) => tx.objectStore("anchors").add(anchor)));
-  await Promise.all(notes.map((note) => tx.objectStore("notes").add(note)));
+  await tx.objectStore("notes").add(note);
   await tx.done;
 }
