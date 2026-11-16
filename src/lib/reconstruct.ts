@@ -272,23 +272,23 @@ function removeRunningLines(texts: string[]) {
   return perPage.map((lines) => lines.filter((line) => !running.has(line)).join("\n"));
 }
 
-function similarPages(a: string, b: string) {
-  const x = normalizedText(a);
-  const y = normalizedText(b);
-  if (!x || !y) return false;
-  if (x === y) return true;
-  if (Math.abs(x.length - y.length) > Math.max(x.length, y.length) * 0.25) return false;
-  const set = new Set(x.split(""));
-  let shared = 0;
-  for (const ch of y) if (set.has(ch)) shared += 1;
-  return shared / Math.max(x.length, y.length) > 0.85;
+function isIncremental(previous: string, next: string) {
+  const a = previous.split("\n").map((line) => line.trim()).filter(Boolean);
+  const b = next.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (!a.length || a.length > b.length) return false;
+  let cursor = 0;
+  for (const line of b) {
+    if (cursor < a.length && line === a[cursor]) cursor += 1;
+    if (cursor === a.length) return true;
+  }
+  return cursor === a.length;
 }
 
 function mergeSimilarPages(texts: string[], images: NoteBlock[]) {
   const mergedTexts: string[] = [];
   const mergedImages: NoteBlock[] = [];
   for (let index = 0; index < texts.length; index += 1) {
-    if (mergedTexts.length && similarPages(texts[index], mergedTexts[mergedTexts.length - 1])) {
+    if (mergedTexts.length && isIncremental(mergedTexts[mergedTexts.length - 1], texts[index])) {
       mergedTexts[mergedTexts.length - 1] = texts[index];
       mergedImages[mergedImages.length - 1] = images[index];
     } else {
