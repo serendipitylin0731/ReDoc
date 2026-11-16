@@ -104,7 +104,7 @@ function ImageViewer({ asset, noteId, onNoteChange, regionMode = false, onRegion
     <div className="image-viewer-toolbar"><span><FileImage size={15} />原始图像 · 缩放不会改变来源坐标</span>{regionMode && <span className="region-hint">在图片上拖拽框选</span>}</div>
     <div className={`image-stage ${regionMode ? "region-active" : ""}`}><div className="image-capture-wrap">
       {url && <img ref={imageRef} src={url} alt={asset.name} draggable={false} />}
-      {regionMode && !region && <div className="page-interaction-layer" onPointerDown={down} onPointerMove={move} onPointerUp={() => { start.current = null; }} />}
+      {regionMode && <div className="page-interaction-layer" style={{ pointerEvents: region ? "none" : "auto" }} onPointerDown={down} onPointerMove={move} onPointerUp={() => { start.current = null; }} onPointerCancel={() => { start.current = null; }} />}
       {regionMode && region && region.width > 8 && region.height > 8 && <>
         <div className="region-block-overlay" />
         <div className="region-selection" style={{ left: region.x, top: region.y, width: region.width, height: region.height }}>
