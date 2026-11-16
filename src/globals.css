@@ -2500,10 +2500,12 @@ html.dark .section-icon-button:hover { background: #16233c; color: #93b4f8; }
 .region-handle.ne { top: -6px; right: -6px; cursor: nesw-resize; }
 .region-handle.sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
 .region-handle.se { bottom: -6px; right: -6px; cursor: nwse-resize; }
-.region-float-actions { position: absolute; right: 6px; bottom: 32px; z-index: 3; display: flex; gap: 6px; }
+.region-float-actions { position: absolute; top: calc(100% + 8px); left: 0; z-index: 3; display: flex; gap: 6px; }
 .region-float-actions .primary-button, .region-float-actions .toolbar-button { min-height: 30px; font-size: 10px; }
 .region-block-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(15, 23, 42, 0.18); }
 .pdf-page.region-active, .image-stage.region-active { position: relative; z-index: 60; }
+.pdf-page.region-active { overflow: visible; }
+.image-stage.region-active { overflow: visible; }
 
 /* ===== 顶部栏课程上下文 ===== */
 .header-course-back { display: inline-flex; align-items: center; gap: 5px; margin-left: 6px; padding: 0; background: transparent; color: #64748b; font-size: 12px; }

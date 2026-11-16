@@ -38,6 +38,7 @@ function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNo
   const [region, setRegion] = useState<Region | null>(null);
   const [selection, setSelection] = useState<TextSelection | null>(null);
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
+  const [resizing, setResizing] = useState(false);
   const startPoint = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -118,6 +119,7 @@ function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNo
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     resizeRef.current = { corner, start: { ...region }, startX: event.clientX, startY: event.clientY };
+    setResizing(true);
   };
   const resizeMove = (event: ReactPointerEvent<HTMLElement>) => {
     const resize = resizeRef.current;
@@ -136,7 +138,7 @@ function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNo
     setRegion(next);
     onRegion(normalizedRegion(next));
   };
-  const resizeEnd = () => { resizeRef.current = null; };
+  const resizeEnd = () => { resizeRef.current = null; setResizing(false); };
   const textSelect = () => {
     if (regionMode) return;
     const selected = window.getSelection();
@@ -208,7 +210,7 @@ function PdfPage({ pdf, pageNumber, zoom, stageWidth, query, asset, noteId, onNo
         <i className="region-handle ne" onPointerDown={startResize("ne")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
         <i className="region-handle sw" onPointerDown={startResize("sw")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
         <i className="region-handle se" onPointerDown={startResize("se")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
-        <div className="region-float-actions"><button className="toolbar-button" onClick={() => { setRegion(null); onRegion(null); }}>取消</button><button className="toolbar-button" disabled={ocrProgress !== null} onClick={() => void capture(true)}>{ocrProgress !== null ? <LoaderCircle size={14} className="spin" /> : <ScanText size={14} />}识别后加入</button><button className="primary-button" disabled={ocrProgress !== null} onClick={() => void capture(false)}><Plus size={15} />截图加入 Note</button></div>
+        <div className="region-float-actions">{!resizing && <><button className="toolbar-button" onClick={() => { setRegion(null); onRegion(null); }}>取消</button><button className="toolbar-button" disabled={ocrProgress !== null} onClick={() => void capture(true)}>{ocrProgress !== null ? <LoaderCircle size={14} className="spin" /> : <ScanText size={14} />}识别后加入</button><button className="primary-button" disabled={ocrProgress !== null} onClick={() => void capture(false)}><Plus size={15} />截图加入 Note</button></>}</div>
       </div>
     </>}
     {selection && !regionMode && <div className="selection-toolbar" style={{ left: selection.left, top: selection.top }} onMouseDown={(event) => event.preventDefault()}><button onClick={() => void addText()}><FilePlus2 size={14} />加入 Note</button><button onClick={() => void addText(true)}>新建 Note</button><button onClick={() => { void navigator.clipboard.writeText(selection.text); toast.success("已复制"); }} aria-label="复制"><Clipboard size={14} /></button></div>}

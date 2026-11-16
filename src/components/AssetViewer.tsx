@@ -18,6 +18,7 @@ function ImageViewer({ asset, noteId, onNoteChange, regionMode = false, onRegion
   const [url, setUrl] = useState("");
   const [region, setRegion] = useState<Region | null>(null);
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
+  const [resizing, setResizing] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => { const value = URL.createObjectURL(asset.blob); setUrl(value); return () => URL.revokeObjectURL(value); }, [asset.blob]);
@@ -42,6 +43,7 @@ function ImageViewer({ asset, noteId, onNoteChange, regionMode = false, onRegion
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     resizeRef.current = { corner, start: { ...region }, startX: event.clientX, startY: event.clientY };
+    setResizing(true);
   };
   const resizeMove = (event: ReactPointerEvent<HTMLElement>) => {
     const resize = resizeRef.current;
@@ -60,7 +62,7 @@ function ImageViewer({ asset, noteId, onNoteChange, regionMode = false, onRegion
     setRegion(next);
     report(next);
   };
-  const resizeEnd = () => { resizeRef.current = null; };
+  const resizeEnd = () => { resizeRef.current = null; setResizing(false); };
   const capture = async (withOcr: boolean) => {
     const image = imageRef.current;
     const box = bounds();
@@ -111,7 +113,7 @@ function ImageViewer({ asset, noteId, onNoteChange, regionMode = false, onRegion
           <i className="region-handle ne" onPointerDown={startResize("ne")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
           <i className="region-handle sw" onPointerDown={startResize("sw")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
           <i className="region-handle se" onPointerDown={startResize("se")} onPointerMove={resizeMove} onPointerUp={resizeEnd} onPointerCancel={resizeEnd} />
-          <div className="region-float-actions"><button className="toolbar-button" onClick={() => { setRegion(null); report(null); }}>取消</button><button className="toolbar-button" disabled={ocrProgress !== null} onClick={() => void capture(true)}>{ocrProgress !== null ? "OCR…" : "识别后加入"}</button><button className="primary-button" disabled={ocrProgress !== null} onClick={() => void capture(false)}>截图加入 Note</button></div>
+          <div className="region-float-actions">{!resizing && <><button className="toolbar-button" onClick={() => { setRegion(null); report(null); }}>取消</button><button className="toolbar-button" disabled={ocrProgress !== null} onClick={() => void capture(true)}>{ocrProgress !== null ? "OCR…" : "识别后加入"}</button><button className="primary-button" disabled={ocrProgress !== null} onClick={() => void capture(false)}>截图加入 Note</button></>}</div>
         </div>
       </>}
     </div></div>
