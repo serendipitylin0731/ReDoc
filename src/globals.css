@@ -2517,6 +2517,16 @@ html.dark .header-course-back:hover { color: #93b4f8; }
 html.dark .header-course-title { color: #e2e8f0; }
 .header-zip-button { margin-left: 8px; min-height: 30px; }
 
+/* ===== 使用说明 ===== */
+.help-dialog { max-width: 560px !important; }
+.help-dialog [data-slot="dialog-title"] { display: flex; align-items: center; gap: 8px; }
+.help-sections { max-height: 62dvh; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.help-sections section h3 { margin: 0 0 6px; color: #172033; font-size: 13px; }
+.help-sections ul { margin: 0; padding-left: 18px; }
+.help-sections li { margin: 4px 0; color: #475569; font-size: 12px; line-height: 1.6; }
+html.dark .help-sections section h3 { color: #e2e8f0; }
+html.dark .help-sections li { color: #cbd5e1; }
+
 /* ===== 文件排序 ===== */
 .file-sort { display: flex; gap: 4px; }
 .file-sort button { flex: 1; height: 28px; border: 1px solid #dce3ec; border-radius: 6px; background: #fff; color: #64748b; font-size: 10px; }
