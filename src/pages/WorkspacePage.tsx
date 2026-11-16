@@ -191,12 +191,7 @@ export default function WorkspacePage() {
   const filteredFolders = courseFolders.filter((folder) => courseAssets.some((asset) => asset.folderId === folder.id && matches(asset)));
 
   return <div className="workspace-page course-page">
-    <HeaderContent><button className="header-course-back" onClick={() => navigate("/courses")}><ArrowLeft size={15} />课程</button><span className="header-course-title">{course.title}</span></HeaderContent>
-    <header className="course-workspace-header">
-      <div className="course-workspace-header-actions">
-        <button className="toolbar-button" onClick={() => void downloadCourseZip()} title="下载整个课程为压缩包"><Download size={15} />打包下载</button>
-      </div>
-    </header>
+    <HeaderContent><button className="header-course-back" onClick={() => navigate("/courses")}><ArrowLeft size={15} />课程</button><span className="header-course-title">{course.title}</span><button className="toolbar-button header-zip-button" onClick={() => void downloadCourseZip()} title="下载整个课程为压缩包"><Download size={15} />打包下载</button></HeaderContent>
     <div className="workspace-body">
       <aside className="file-sidebar">
         <div className="file-sidebar-filters">

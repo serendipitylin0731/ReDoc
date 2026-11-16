@@ -2500,6 +2500,7 @@ html.dark .section-icon-button:hover { background: #16233c; color: #93b4f8; }
 html.dark .header-course-back { color: #94a3b8; }
 html.dark .header-course-back:hover { color: #93b4f8; }
 html.dark .header-course-title { color: #e2e8f0; }
+.header-zip-button { margin-left: 8px; min-height: 30px; }
 
 /* ===== 文件排序 ===== */
 .file-sort { display: flex; gap: 4px; }
