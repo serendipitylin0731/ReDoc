@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ArrowLeft, BookOpen, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Crop, Download, File, FileImage, FileText, Folder, FolderInput, FolderOpen, FolderPlus, MoreHorizontal, PanelRightClose, PanelRightOpen, Pencil, Plus, Search, ScanText, Trash2, Upload, Video, X } from "lucide-react";
+import { ArrowLeft, ArrowUpDown, BookOpen, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Crop, Download, File, FileImage, FileText, Folder, FolderInput, FolderOpen, FolderPlus, MoreHorizontal, PanelRightClose, PanelRightOpen, Pencil, Plus, Search, ScanText, Trash2, Upload, Video, X } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import JSZip from "jszip";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import AssetViewer from "@app/components/AssetViewer";
 import { HeaderContent } from "@app/components/AppShell";
 import ConvertPanel from "@app/components/ConvertPanel";
@@ -48,6 +48,21 @@ function naturalCompare(a: string, b: string) {
   return 0;
 }
 
+type SortState = { field: "time" | "name"; order: "asc" | "desc" };
+
+function SortMenu({ value, onChange, label }: { value: SortState; onChange: (value: SortState) => void; label: string }) {
+  return <DropdownMenu>
+    <DropdownMenuTrigger asChild><button className="section-icon-button sort-button" title="排序" aria-label={`${label}排序`}><ArrowUpDown size={14} /></button></DropdownMenuTrigger>
+    <DropdownMenuContent align="end">
+      <DropdownMenuLabel>{label}排序</DropdownMenuLabel>
+      <DropdownMenuItem onSelect={() => onChange({ field: "time", order: "desc" })}>按时间 · 最新在前</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => onChange({ field: "time", order: "asc" })}>按时间 · 最早在前</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => onChange({ field: "name", order: "asc" })}>按文件名 · 正序</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => onChange({ field: "name", order: "desc" })}>按文件名 · 倒序</DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>;
+}
+
 export default function WorkspacePage() {
   const { courseId = "" } = useParams();
   const { courses, assets, notes, folders, createNote, updateNote, renameAsset, moveAssetToFolder, deleteAsset, removeNote, createFolder, getPreference, setPreference } = useWorkspace();
@@ -65,7 +80,8 @@ export default function WorkspacePage() {
   const [pdfSource, setPdfSource] = useState<{ id: string; name: string; markdown: string; courseId: string } | null>(null);
   const [fileQuery, setFileQuery] = useState("");
   const [formatFilter, setFormatFilter] = useState("");
-  const [fileSort, setFileSort] = useState<"time" | "name">("time");
+  const [fileSort, setFileSort] = useState<SortState>({ field: "time", order: "desc" });
+  const [noteSort, setNoteSort] = useState<SortState>({ field: "time", order: "desc" });
   const [filesOpen, setFilesOpen] = useState(true);
   const [notesOpen, setNotesOpen] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -141,7 +157,14 @@ export default function WorkspacePage() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const availableKinds = [...new Set(courseAssets.map((asset) => asset.kind))];
-  const sortAssets = (list: Asset[]) => [...list].sort((a, b) => (fileSort === "name" ? naturalCompare(a.name, b.name) : b.createdAt.localeCompare(a.createdAt)));
+  const sortAssets = (list: Asset[]) => [...list].sort((a, b) => {
+    const cmp = fileSort.field === "name" ? naturalCompare(a.name, b.name) : a.createdAt.localeCompare(b.createdAt);
+    return fileSort.order === "asc" ? cmp : -cmp;
+  });
+  const displayNotes = [...courseNotes].sort((a, b) => {
+    const cmp = noteSort.field === "name" ? naturalCompare(a.title, b.title) : a.updatedAt.localeCompare(b.updatedAt);
+    return noteSort.order === "asc" ? cmp : -cmp;
+  });
 
   const fileRow = (asset: Asset, indent: number) => <div className={`file-list-item ${currentAsset?.id === asset.id ? "active" : ""}`} key={asset.id} style={{ paddingLeft: `${10 + indent * 14}px` }}>
     <button className="file-main-button" onClick={() => selectAsset(asset.id)}><span className={`file-type-icon type-${asset.kind}`}><AssetIcon asset={asset} /></span><span className="file-item-copy"><strong>{asset.name}</strong><small>{asset.kind.toUpperCase()} · {(asset.size / 1024).toFixed(0)} KB</small></span></button>
@@ -179,15 +202,14 @@ export default function WorkspacePage() {
         <div className="file-sidebar-filters">
           <label className="course-search"><Search size={15} /><input value={fileQuery} onChange={(event) => setFileQuery(event.target.value)} placeholder="搜索文件名或内容…" />{fileQuery && <button onClick={() => setFileQuery("")}><X size={13} /></button>}</label>
           <select className="format-filter" aria-label="按格式筛选" value={formatFilter} onChange={(event) => setFormatFilter(event.target.value)}><option value="">全部格式</option>{availableKinds.map((kind) => <option value={kind} key={kind}>{KIND_LABELS[kind] ?? kind.toUpperCase()}</option>)}</select>
-          <div className="file-sort"><button className={fileSort === "time" ? "active" : ""} onClick={() => setFileSort("time")}>按时间</button><button className={fileSort === "name" ? "active" : ""} onClick={() => setFileSort("name")}>按文件名</button></div>
         </div>
         <div className="file-section">
-          <div className="file-section-head"><button onClick={() => setFilesOpen((value) => !value)}>{filesOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>文件</span><small>{courseAssets.length}</small></button><button className="section-icon-button" onClick={() => void addFolder()} title="新建文件夹" aria-label="新建文件夹"><FolderPlus size={15} /></button><UploadDialog courseId={courseId} onUploaded={(uploaded) => { if (uploaded[0]) selectAsset(uploaded[0].id); }} trigger={<button className="section-icon-button" title="导入资料" aria-label="导入资料"><Upload size={15} /></button>} /></div>
+          <div className="file-section-head"><button onClick={() => setFilesOpen((value) => !value)}>{filesOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>文件</span><small>{courseAssets.length}</small></button><SortMenu value={fileSort} onChange={setFileSort} label="文件" /><button className="section-icon-button" onClick={() => void addFolder()} title="新建文件夹" aria-label="新建文件夹"><FolderPlus size={15} /></button><UploadDialog courseId={courseId} onUploaded={(uploaded) => { if (uploaded[0]) selectAsset(uploaded[0].id); }} trigger={<button className="section-icon-button" title="导入资料" aria-label="导入资料"><Upload size={15} /></button>} /></div>
           {filesOpen && <div className="vscode-tree">{filteredRoot.map((asset) => fileRow(asset, 0))}{filteredFolders.map(folderNode)}{!filteredRoot.length && !filteredFolders.length && <div className="file-list-empty"><Search size={20} /><span>没有匹配的文件</span></div>}</div>}
         </div>
         <div className="file-section notes-section">
-          <div className="file-section-head"><button onClick={() => setNotesOpen((value) => !value)}>{notesOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>笔记</span><small>{courseNotes.length}</small></button><button className="notes-new-button" onClick={() => void newNote()} title="新建笔记" aria-label="新建笔记"><Plus size={14} /></button></div>
-          {notesOpen && <div className="vscode-tree">{courseNotes.map(noteRow)}{!courseNotes.length && <div className="tree-empty">还没有笔记</div>}</div>}
+          <div className="file-section-head"><button onClick={() => setNotesOpen((value) => !value)}>{notesOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>笔记</span><small>{courseNotes.length}</small></button><SortMenu value={noteSort} onChange={setNoteSort} label="笔记" /><button className="notes-new-button" onClick={() => void newNote()} title="新建笔记" aria-label="新建笔记"><Plus size={14} /></button></div>
+          {notesOpen && <div className="vscode-tree">{displayNotes.map(noteRow)}{!courseNotes.length && <div className="tree-empty">还没有笔记</div>}</div>}
         </div>
       </aside>
       <div className="split-workspace" ref={splitContainer}>
