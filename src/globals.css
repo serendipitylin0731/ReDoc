@@ -2501,3 +2501,10 @@ html.dark .header-course-back { color: #94a3b8; }
 html.dark .header-course-back:hover { color: #93b4f8; }
 html.dark .header-course-title { color: #e2e8f0; }
 
+/* ===== 文件排序 ===== */
+.file-sort { display: flex; gap: 4px; }
+.file-sort button { flex: 1; height: 28px; border: 1px solid #dce3ec; border-radius: 6px; background: #fff; color: #64748b; font-size: 10px; }
+.file-sort button.active { border-color: #2563eb; background: #eaf1ff; color: #1d4ed8; }
+html.dark .file-sort button { border-color: #243252; background: #131e34; color: #8ea0bd; }
+html.dark .file-sort button.active { border-color: #3b82f6; background: #16233c; color: #93b4f8; }
+

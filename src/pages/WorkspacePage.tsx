@@ -27,6 +27,27 @@ function searchableText(asset: Asset) {
 
 const KIND_LABELS: Record<string, string> = { pdf: "PDF", image: "图片", markdown: "Markdown", text: "文本", video: "视频", audio: "音频", csv: "CSV", office: "Office", unsupported: "其他" };
 
+function naturalCompare(a: string, b: string) {
+  const aParts = a.match(/\d+|\D+/g) ?? [];
+  const bParts = b.match(/\d+|\D+/g) ?? [];
+  const length = Math.max(aParts.length, bParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const ap = aParts[index] ?? "";
+    const bp = bParts[index] ?? "";
+    if (ap === bp) continue;
+    const aNumber = /^\d+$/.test(ap);
+    const bNumber = /^\d+$/.test(bp);
+    if (aNumber && bNumber) {
+      const diff = Number(ap) - Number(bp);
+      if (diff !== 0) return diff;
+    } else {
+      const compared = ap.toLowerCase().localeCompare(bp.toLowerCase());
+      if (compared !== 0) return compared;
+    }
+  }
+  return 0;
+}
+
 export default function WorkspacePage() {
   const { courseId = "" } = useParams();
   const { courses, assets, notes, folders, createNote, updateNote, renameAsset, moveAssetToFolder, deleteAsset, removeNote, createFolder, getPreference, setPreference } = useWorkspace();
@@ -44,6 +65,7 @@ export default function WorkspacePage() {
   const [pdfSource, setPdfSource] = useState<{ id: string; name: string; markdown: string; courseId: string } | null>(null);
   const [fileQuery, setFileQuery] = useState("");
   const [formatFilter, setFormatFilter] = useState("");
+  const [fileSort, setFileSort] = useState<"time" | "name">("time");
   const [filesOpen, setFilesOpen] = useState(true);
   const [notesOpen, setNotesOpen] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -119,6 +141,7 @@ export default function WorkspacePage() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const availableKinds = [...new Set(courseAssets.map((asset) => asset.kind))];
+  const sortAssets = (list: Asset[]) => [...list].sort((a, b) => (fileSort === "name" ? naturalCompare(a.name, b.name) : b.createdAt.localeCompare(a.createdAt)));
 
   const fileRow = (asset: Asset, indent: number) => <div className={`file-list-item ${currentAsset?.id === asset.id ? "active" : ""}`} key={asset.id} style={{ paddingLeft: `${10 + indent * 14}px` }}>
     <button className="file-main-button" onClick={() => selectAsset(asset.id)}><span className={`file-type-icon type-${asset.kind}`}><AssetIcon asset={asset} /></span><span className="file-item-copy"><strong>{asset.name}</strong><small>{asset.kind.toUpperCase()} · {(asset.size / 1024).toFixed(0)} KB</small></span></button>
@@ -131,7 +154,7 @@ export default function WorkspacePage() {
   </div>;
 
   const folderNode = (folder: FolderType) => {
-    const children = courseAssets.filter((asset) => asset.folderId === folder.id);
+    const children = sortAssets(courseAssets.filter((asset) => asset.folderId === folder.id));
     const isOpen = expanded[folder.id] !== false;
     return <div className="tree-folder" key={folder.id}>
       <button className="tree-folder-head" onClick={() => setExpanded((value) => ({ ...value, [folder.id]: !isOpen }))}>{isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<FolderOpen size={15} /><span>{folder.name}</span><small>{children.length}</small></button>
@@ -141,7 +164,7 @@ export default function WorkspacePage() {
 
   if (!course) return null;
   const rootFiles = courseAssets.filter((asset) => !asset.folderId);
-  const filteredRoot = rootFiles.filter(matches);
+  const filteredRoot = sortAssets(rootFiles.filter(matches));
   const filteredFolders = courseFolders.filter((folder) => courseAssets.some((asset) => asset.folderId === folder.id && matches(asset)));
 
   return <div className="workspace-page course-page">
@@ -156,6 +179,7 @@ export default function WorkspacePage() {
         <div className="file-sidebar-filters">
           <label className="course-search"><Search size={15} /><input value={fileQuery} onChange={(event) => setFileQuery(event.target.value)} placeholder="搜索文件名或内容…" />{fileQuery && <button onClick={() => setFileQuery("")}><X size={13} /></button>}</label>
           <select className="format-filter" aria-label="按格式筛选" value={formatFilter} onChange={(event) => setFormatFilter(event.target.value)}><option value="">全部格式</option>{availableKinds.map((kind) => <option value={kind} key={kind}>{KIND_LABELS[kind] ?? kind.toUpperCase()}</option>)}</select>
+          <div className="file-sort"><button className={fileSort === "time" ? "active" : ""} onClick={() => setFileSort("time")}>按时间</button><button className={fileSort === "name" ? "active" : ""} onClick={() => setFileSort("name")}>按文件名</button></div>
         </div>
         <div className="file-section">
           <div className="file-section-head"><button onClick={() => setFilesOpen((value) => !value)}>{filesOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>文件</span><small>{courseAssets.length}</small></button><button className="section-icon-button" onClick={() => void addFolder()} title="新建文件夹" aria-label="新建文件夹"><FolderPlus size={15} /></button><UploadDialog courseId={courseId} onUploaded={(uploaded) => { if (uploaded[0]) selectAsset(uploaded[0].id); }} trigger={<button className="section-icon-button" title="导入资料" aria-label="导入资料"><Upload size={15} /></button>} /></div>
