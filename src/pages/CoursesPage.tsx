@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Archive, ArrowRight, BookOpen, Check, FolderOpen, MoreHorizontal, Pencil, Pin, Plus, Search } from "lucide-react";
+import { Archive, ArrowRight, BookOpen, Check, FolderOpen, MoreHorizontal, Pencil, Pin, Plus, Search, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useWorkspace } from "@app/state/WorkspaceContext";
 import type { Course } from "@app/types";
 
@@ -38,7 +38,7 @@ export function CourseDialog({ course, trigger }: { course?: Course; trigger: Re
 }
 
 export default function CoursesPage() {
-  const { courses, updateCourse } = useWorkspace();
+  const { courses, updateCourse, deleteCourse } = useWorkspace();
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const navigate = useNavigate();
@@ -56,7 +56,7 @@ export default function CoursesPage() {
         <div className="course-card-cover" style={{ background: course.color }}><span className="course-cover-emoji">{course.icon || "📘"}</span>{course.pinned && <span className="course-pinned-badge"><Pin size={12} />置顶</span>}<span className="course-cover-lines" aria-hidden="true"><i /><i /><i /></span><ArrowRight className="course-cover-arrow" size={18} /></div>
         <div className="course-card-body"><h2>{course.title}</h2>{course.description && <p>{course.description}</p>}</div>
       </button>
-      <div className="course-card-footer"><span>上次修改 {new Date(course.updatedAt).toLocaleString("zh-CN", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span><DropdownMenu><DropdownMenuTrigger asChild><button className="icon-button" aria-label={`${course.title}操作`}><MoreHorizontal size={18} /></button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => navigate(`/courses/${course.id}`)}><BookOpen size={14} />打开课程</DropdownMenuItem><DropdownMenuItem onSelect={() => togglePin(course)}>{course.pinned ? <Pin size={14} /> : <Pin size={14} />}{course.pinned ? "取消置顶" : "置顶课程"}</DropdownMenuItem><CourseDialog course={course} trigger={<DropdownMenuItem onSelect={(event) => event.preventDefault()}><Pencil size={14} />编辑课程</DropdownMenuItem>} /><DropdownMenuItem onSelect={() => void updateCourse({ ...course, archived: !course.archived })}>{course.archived ? <Check size={14} /> : <Archive size={14} />}{course.archived ? "恢复课程" : "归档课程"}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
+      <div className="course-card-footer"><span>上次修改 {new Date(course.updatedAt).toLocaleString("zh-CN", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span><DropdownMenu><DropdownMenuTrigger asChild><button className="icon-button" aria-label={`${course.title}操作`}><MoreHorizontal size={18} /></button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => navigate(`/courses/${course.id}`)}><BookOpen size={14} />打开课程</DropdownMenuItem><DropdownMenuItem onSelect={() => togglePin(course)}>{course.pinned ? <Pin size={14} /> : <Pin size={14} />}{course.pinned ? "取消置顶" : "置顶课程"}</DropdownMenuItem><CourseDialog course={course} trigger={<DropdownMenuItem onSelect={(event) => event.preventDefault()}><Pencil size={14} />编辑课程</DropdownMenuItem>} /><DropdownMenuItem onSelect={() => void updateCourse({ ...course, archived: !course.archived })}>{course.archived ? <Check size={14} /> : <Archive size={14} />}{course.archived ? "恢复课程" : "归档课程"}</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onSelect={() => { if (window.confirm(`确认删除课程“${course.title}”？\n课程内的资料、笔记与转换记录将一并删除，且无法恢复。`)) void deleteCourse(course); }}><Trash2 size={14} />删除课程</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
     </article>)}</div>
     {!visible.length && <div className="large-empty-state"><FolderOpen size={32} /><h3>{showArchived ? "还没有已归档课程" : "没有找到课程"}</h3><p>{showArchived ? "归档的课程会显示在这里。" : "尝试其他关键词，或新建一门课程。"}</p></div>}
   </div>;

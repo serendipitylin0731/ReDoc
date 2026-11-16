@@ -16,6 +16,7 @@ interface WorkspaceContextValue {
   saveStates: Record<string, "saving" | "saved" | "conflict">;
   createCourse: (title: string, description: string, extra?: Partial<Pick<Course, "icon" | "color" | "pinned">>) => Promise<Course>;
   updateCourse: (course: Course) => Promise<void>;
+  deleteCourse: (course: Course) => Promise<void>;
   createFolder: (courseId: string, name: string, kind?: "asset" | "note", parentId?: string | null) => Promise<void>;
   uploadFiles: (courseId: string, files: File[], folderId?: string | null) => Promise<Asset[]>;
   renameAsset: (asset: Asset, name: string) => Promise<void>;
@@ -153,6 +154,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const updated = { ...course, updatedAt: new Date().toISOString() };
     await putRecord("courses", updated);
     setCourses((current) => current.map((item) => item.id === course.id ? updated : item));
+  }, []);
+
+  const deleteCourse = useCallback(async (course: Course) => {
+    const db = await getDb();
+    const [assetRows, folderRows, noteRows, anchorRows, jobRows, documentRows] = await Promise.all([
+      db.getAll("assets"), db.getAll("folders"), db.getAll("notes"), db.getAll("anchors"), db.getAll("jobs"), db.getAll("documents"),
+    ]);
+    const assetIds = assetRows.filter((item) => item.courseId === course.id).map((item) => item.id);
+    const folderIds = folderRows.filter((item) => item.courseId === course.id).map((item) => item.id);
+    const noteIds = noteRows.filter((item) => item.courseId === course.id).map((item) => item.id);
+    const anchorIds = anchorRows.filter((item) => assetIds.includes(item.assetId)).map((item) => item.id);
+    const jobIds = jobRows.filter((item) => item.courseId === course.id).map((item) => item.id);
+    const documentIds = documentRows.filter((item) => item.courseId === course.id).map((item) => item.id);
+    const tx = db.transaction(["courses", "folders", "assets", "notes", "anchors", "jobs", "documents"], "readwrite");
+    await tx.objectStore("courses").delete(course.id);
+    await Promise.all(folderIds.map((id) => tx.objectStore("folders").delete(id)));
+    await Promise.all(assetIds.map((id) => tx.objectStore("assets").delete(id)));
+    await Promise.all(noteIds.map((id) => tx.objectStore("notes").delete(id)));
+    await Promise.all(anchorIds.map((id) => tx.objectStore("anchors").delete(id)));
+    await Promise.all(jobIds.map((id) => tx.objectStore("jobs").delete(id)));
+    await Promise.all(documentIds.map((id) => tx.objectStore("documents").delete(id)));
+    await tx.done;
+    setCourses((current) => current.filter((item) => item.id !== course.id));
+    setFolders((current) => current.filter((item) => item.courseId !== course.id));
+    setAssets((current) => current.filter((item) => item.courseId !== course.id));
+    setNotes((current) => current.filter((item) => item.courseId !== course.id));
+    setAnchors((current) => current.filter((item) => !assetIds.includes(item.assetId)));
+    setJobs((current) => current.filter((item) => item.courseId !== course.id));
+    setDocuments((current) => current.filter((item) => item.courseId !== course.id));
+    toast.success("课程已删除");
   }, []);
 
   const createFolder = useCallback(async (courseId: string, name: string, kind: "asset" | "note" = "asset", parentId: string | null = null) => {
@@ -371,7 +402,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const value: WorkspaceContextValue = {
     loading, courses, folders, assets, notes, anchors, jobs, documents, saveStates, noteCursor,
-    createCourse, updateCourse, createFolder, uploadFiles, renameAsset, moveAssetToFolder, deleteAsset, createNote, updateNote, removeNote, moveNoteToFolder,
+    createCourse, updateCourse, deleteCourse, createFolder, uploadFiles, renameAsset, moveAssetToFolder, deleteAsset, createNote, updateNote, removeNote, moveNoteToFolder,
     addExcerpt, setNoteCursor, insertOcrBlocks, resolveAnchor, startReconstruction, saveDocumentAsset, setPreference, getPreference, refresh,
   };
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
