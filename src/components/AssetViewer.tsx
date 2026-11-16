@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AudioLines, Camera, ChevronRight, Download, Expand, File, FileArchive, FileImage, FileText, Play, ScanText, Table2, Video } from "lucide-react";
+import { AudioLines, Camera, ChevronRight, Crop, Download, Expand, File, FileArchive, FileImage, FileText, Play, ScanText, Table2, Video } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import PdfViewer from "@app/components/PdfViewer";
@@ -74,7 +74,7 @@ function ImageViewer({ asset, noteId, onNoteChange, regionMode = false, onRegion
     onRegionModeChange?.(false);
   };
   return <>
-    <div className="image-viewer-toolbar"><span><FileImage size={15} />原始图像 · 缩放不会改变来源坐标</span>{regionMode && <span className="region-hint">在图片上拖拽框选</span>}</div>
+    <div className="image-viewer-toolbar"><span><FileImage size={15} />原始图像 · 缩放不会改变来源坐标</span><div className="image-viewer-toolbar-actions">{regionMode && <span className="region-hint">在图片上拖拽框选</span>}<button className={`toolbar-button ${regionMode ? "selected" : ""}`} onClick={() => onRegionModeChange?.(!regionMode)}><Crop size={15} />{regionMode ? "退出框选" : "框选摘录"}</button></div></div>
     <div className={`image-stage ${regionMode ? "region-active" : ""}`}><div className="image-capture-wrap">
       {url && <img ref={imageRef} src={url} alt={asset.name} draggable={false} />}
       {regionMode && <div className="page-interaction-layer" onPointerDown={down} onPointerMove={move} onPointerUp={() => { start.current = null; }} />}
